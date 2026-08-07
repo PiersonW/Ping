@@ -18,9 +18,9 @@ import { displayName } from '../lib/displayName';
 
 const PAGE_SIZE = 30;
 
-type Message = {
+type GroupMessage = {
   id: string;
-  event_id: string;
+  group_id: string;
   sender_id: string;
   body: string;
   created_at: string;
@@ -28,13 +28,12 @@ type Message = {
 };
 
 type Props = {
-  eventId: string;
-  onFlipBack: () => void;
+  groupId: string;
 };
 
-export default function MessageThread({ eventId, onFlipBack }: Props) {
+export default function GroupMessageThread({ groupId }: Props) {
   const { session } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -43,13 +42,12 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const listRef = useRef<FlatList>(null);
 
-  const senderName = (m: Message) =>
+  const senderName = (m: GroupMessage) =>
     m.sender_id === session?.user?.id ? 'You' : displayName(m.profiles, 'Someone');
 
-  // KeyboardAvoidingView is unreliable inside this component's nested,
-  // animated (flip-card) ancestor chain - it was observed collapsing the
-  // input mid-type. Track the real keyboard height directly instead and
-  // apply it as an explicit offset.
+  // Same keyboard-tracking gotcha as MessageThread.tsx: KeyboardAvoidingView
+  // is unreliable inside this app's nested/animated ancestor chains, so we
+  // track the real keyboard height directly instead.
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
@@ -67,20 +65,20 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
 
   const fetchLatest = useCallback(async () => {
     const { data, error } = await supabase
-      .from('messages')
-      .select('id, event_id, sender_id, body, created_at, profiles(full_name, email)')
-      .eq('event_id', eventId)
+      .from('group_messages')
+      .select('id, group_id, sender_id, body, created_at, profiles(full_name, email)')
+      .eq('group_id', groupId)
       .order('created_at', { ascending: false })
       .limit(PAGE_SIZE);
 
     if (error) {
-      console.error('Error fetching messages:', error);
+      console.error('Error fetching group messages:', error);
       return;
     }
     const page = (data as any[]) || [];
     setMessages(page);
     setHasMore(page.length === PAGE_SIZE);
-  }, [eventId]);
+  }, [groupId]);
 
   const loadOlder = async () => {
     if (loadingMore || !hasMore || messages.length === 0) return;
@@ -88,9 +86,9 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
 
     const oldest = messages[messages.length - 1];
     const { data, error } = await supabase
-      .from('messages')
-      .select('id, event_id, sender_id, body, created_at, profiles(full_name, email)')
-      .eq('event_id', eventId)
+      .from('group_messages')
+      .select('id, group_id, sender_id, body, created_at, profiles(full_name, email)')
+      .eq('group_id', groupId)
       .lt('created_at', oldest.created_at)
       .order('created_at', { ascending: false })
       .limit(PAGE_SIZE);
@@ -98,7 +96,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     setLoadingMore(false);
 
     if (error) {
-      console.error('Error loading older messages:', error);
+      console.error('Error loading older group messages:', error);
       return;
     }
     const page = (data as any[]) || [];
@@ -110,10 +108,10 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     fetchLatest().finally(() => setLoading(false));
 
     const channel = supabase
-      .channel(`messages-${eventId}`)
+      .channel(`group-messages-${groupId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `event_id=eq.${eventId}` },
+        { event: 'INSERT', schema: 'public', table: 'group_messages', filter: `group_id=eq.${groupId}` },
         (payload) => {
           const row = payload.new as any;
           setMessages((prev) => {
@@ -127,7 +125,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [eventId, fetchLatest]);
+  }, [groupId, fetchLatest]);
 
   const handleSend = async () => {
     const body = draft.trim();
@@ -137,44 +135,44 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     setDraft('');
 
     const { error } = await supabase
-      .from('messages')
-      .insert([{ event_id: eventId, sender_id: session.user.id, body }]);
+      .from('group_messages')
+      .insert([{ group_id: groupId, sender_id: session.user.id, body }]);
 
     setSending(false);
 
     if (error) {
-      console.error('Error sending message:', error);
+      console.error('Error sending group message:', error);
       setDraft(body);
       return;
     }
 
     await fetchLatest();
 
-    const [{ data: otherInvitees }, { data: eventRow }] = await Promise.all([
-      supabase.from('invitees').select('user_id').eq('event_id', eventId).neq('user_id', session.user.id),
-      supabase.from('events').select('title').eq('id', eventId).single(),
+    // Recipients are the group owner plus resolved members — either role
+    // could be the sender, so both need to be included and the sender
+    // excluded, unlike events which only ever have one host.
+    const [{ data: groupRow }, { data: memberRows }] = await Promise.all([
+      supabase.from('groups').select('name, owner_id').eq('id', groupId).single(),
+      supabase.from('group_members').select('user_id').eq('group_id', groupId).not('user_id', 'is', null),
     ]);
 
-    const recipientIds = (otherInvitees || []).map((i: any) => i.user_id).filter(Boolean);
+    const recipientIds = Array.from(
+      new Set([groupRow?.owner_id, ...(memberRows || []).map((m: any) => m.user_id)].filter(Boolean))
+    ).filter((id) => id !== session.user.id);
+
     const senderDisplayName =
       session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Someone';
 
     notify(
       recipientIds,
-      eventRow?.title ? `New message — ${eventRow.title}` : 'New message',
+      groupRow?.name ? `New message — ${groupRow.name}` : 'New group message',
       `${senderDisplayName}: ${body}`,
-      { eventId }
+      { groupId }
     );
   };
 
   return (
     <View style={{ flex: 1 }}>
-      <TouchableOpacity onPress={onFlipBack} style={styles.backButton}>
-        <Text style={styles.backText}>‹ Back to details</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.header}>Messages</Text>
-
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
@@ -225,10 +223,6 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
       <View
         style={[
           styles.inputRow,
-          // The card is inset 20px from the screen edge already (its own
-          // padding), so only the keyboard height beyond that needs to be
-          // reserved here, plus a small buffer so the input floats clear
-          // of the keyboard instead of touching it.
           { marginBottom: keyboardHeight > 0 ? keyboardHeight - 20 + 12 : 12 },
         ]}
       >
@@ -249,9 +243,6 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backButton: { marginBottom: 8 },
-  backText: { color: colors.primary, fontSize: 16, fontWeight: '600' },
-  header: { color: colors.textPrimary, fontSize: 20, fontWeight: '700', marginBottom: 12 },
   emptyText: { color: colors.textMuted, textAlign: 'center', marginTop: 40, fontSize: 15 },
   endOfThreadText: { color: colors.textMuted, textAlign: 'center', fontSize: 12, marginVertical: 12 },
   bubbleRow: { flexDirection: 'row', marginBottom: 10 },

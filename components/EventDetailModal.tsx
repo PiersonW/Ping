@@ -16,16 +16,23 @@ type Props = {
   visible: boolean;
   eventId: string | null;
   onClose: () => void;
+  startOnMessages?: boolean;
 };
 
-export default function EventDetailModal({ visible, eventId, onClose }: Props) {
-  const [isFlipped, setIsFlipped] = useState(false);
-  const flipAnim = useRef(new Animated.Value(0)).current;
+export default function EventDetailModal({ visible, eventId, onClose, startOnMessages = false }: Props) {
+  const [isFlipped, setIsFlipped] = useState(startOnMessages);
+  const flipAnim = useRef(new Animated.Value(startOnMessages ? 180 : 0)).current;
   const dragY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (visible) dragY.setValue(0);
-  }, [visible]);
+    if (visible) {
+      dragY.setValue(0);
+      // Jump (don't animate) to the requested face — the modal is already
+      // sliding in, so an extra flip animation on top would look off.
+      flipAnim.setValue(startOnMessages ? 180 : 0);
+      setIsFlipped(startOnMessages);
+    }
+  }, [visible, startOnMessages]);
 
   const panResponder = useRef(
     PanResponder.create({

@@ -19,7 +19,7 @@ import { findOrCreateContact } from '../../lib/phone';
 import { colors } from '../../lib/theme';
 import ImportContactsModal from '../../components/ImportContactsModal';
 
-type Contact = { id: string; name: string; phone: string | null };
+type Contact = { id: string; name: string; phone: string | null; linked_user_id: string | null };
 
 export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -42,7 +42,11 @@ export default function GroupDetailScreen() {
     const [{ data: groupData, error: groupError }, { data: contactsData, error: contactsError }] =
       await Promise.all([
         supabase.from('groups').select('id, name, is_shared, group_members(contact_id)').eq('id', id).single(),
-        supabase.from('contacts').select('id, name, phone').eq('owner_id', session.user.id).order('name'),
+        supabase
+          .from('contacts')
+          .select('id, name, phone, linked_user_id')
+          .eq('owner_id', session.user.id)
+          .order('name'),
       ]);
 
     if (groupError) console.error('Error fetching group:', groupError);
@@ -78,7 +82,7 @@ export default function GroupDetailScreen() {
     } else {
       const { error } = await supabase
         .from('group_members')
-        .insert([{ group_id: id, contact_id: contact.id }]);
+        .insert([{ group_id: id, contact_id: contact.id, user_id: contact.linked_user_id || null }]);
       if (error) {
         console.error('Error adding member:', error);
         return;

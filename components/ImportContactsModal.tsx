@@ -18,7 +18,13 @@ import { findOrCreateContact } from '../lib/phone';
 import { colors } from '../lib/theme';
 
 type DeviceContact = { key: string; name: string; phone: string | null };
-type AppContact = { id: string; name: string; phone: string | null };
+type AppContact = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  linked_user_id: string | null;
+};
 
 type Props = {
   visible: boolean;
