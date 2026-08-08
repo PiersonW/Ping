@@ -1,11 +1,14 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { supabase } from '../supabase';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -37,12 +40,18 @@ export async function registerForPushNotifications(userId: string) {
     });
   }
 
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+  if (!projectId) {
+    console.log('Push token unavailable: no EAS projectId in app.json.');
+    return;
+  }
+
   let token: string;
   try {
-    const tokenData = await Notifications.getExpoPushTokenAsync();
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
     token = tokenData.data;
   } catch (err) {
-    console.log('Push token unavailable (no EAS project configured yet):', err);
+    console.log('Push token unavailable:', err);
     return;
   }
 

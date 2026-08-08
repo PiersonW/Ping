@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Ping",
-    "slug": "ping-app",
+    "slug": "ping",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -22,7 +22,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS"
+      ]
     },
     "web": {
       "output": "static",
@@ -64,6 +68,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "689a0b22-ce0c-4255-b361-8222f77688e6"
+      }
+    },
+    "owner": "pingmobileapp"
   }
 }
