@@ -11,7 +11,7 @@ import Animated, {
   Extrapolation,
   runOnJS,
 } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../supabase';
 import EventCard, { PingEvent } from '../../components/EventCard';
 import CompactEventRow from '../../components/CompactEventRow';
@@ -20,9 +20,11 @@ import CreateEventModal from '../../components/CreateEventModal';
 import EventDetailModal from '../../components/EventDetailModal';
 import GroupChatModal from '../../components/GroupChatModal';
 import ProfileMenu from '../../components/ProfileMenu';
+import PingLogoMenu from '../../components/PingLogoMenu';
 import { useAuth } from '../../lib/AuthContext';
 import { useLatestMessages } from '../../lib/useLatestMessages';
 import { useLatestGroupMessages } from '../../lib/useLatestGroupMessages';
+import { useNotificationsContext } from '../../lib/NotificationsContext';
 import { colors, calendarTheme } from '../../lib/theme';
 
 const toDateKey = (date: Date) => {
@@ -84,6 +86,13 @@ export default function HomeScreen() {
     fetchLatestFor: fetchLatestGroupFor,
     refresh: refreshLatestGroupMessages,
   } = useLatestGroupMessages(session?.user?.id);
+  const { unreadCount, refresh: refreshNotifications } = useNotificationsContext();
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshNotifications();
+    }, [refreshNotifications])
+  );
 
   const fetchEvents = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -316,6 +325,14 @@ export default function HomeScreen() {
       dragY.value = withSpring(target, SPRING_CONFIG);
     });
 
+  // Lets the "Messages" menu link snap the handle straight to the bottom
+  // resting point, revealing the Message Board the same way a manual drag
+  // would — teaches people where the feature lives.
+  const openMessages = () => {
+    if (!ready) return;
+    dragY.value = withSpring(bottomLimit, SPRING_CONFIG);
+  };
+
   // Content type is a pure function of which side of center the handle is
   // on — no separate toggle/threshold bookkeeping needed.
   useAnimatedReaction(
@@ -445,9 +462,11 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => setModalVisible(true)}>
-          <Text style={styles.appTitle}>Ping</Text>
-        </TouchableOpacity>
+        <PingLogoMenu
+          hasNotifications={unreadCount > 0}
+          onCreatePing={() => setModalVisible(true)}
+          onOpenMessages={openMessages}
+        />
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={() => setModalVisible(true)}>
             <Text style={styles.createText}>Create</Text>
@@ -551,6 +570,7 @@ export default function HomeScreen() {
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         onCreated={handleCreated}
+        initialDate={selectedDate}
       />
 
       <EventDetailModal
@@ -579,7 +599,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginBottom: 4,
   },
-  appTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '800' },
   headerActions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
   createText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
   draftsText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },

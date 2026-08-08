@@ -163,7 +163,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
       recipientIds,
       eventRow?.title ? `New message — ${eventRow.title}` : 'New message',
       `${senderDisplayName}: ${body}`,
-      { eventId }
+      { eventId, type: 'message' }
     );
   };
 

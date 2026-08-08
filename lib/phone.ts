@@ -37,6 +37,30 @@ export async function findOrCreateContact(
       .maybeSingle();
 
     if (existing) {
+      // A contact created before the other person had an account (or before
+      // they'd set this phone number) is stuck with linked_user_id: null
+      // forever otherwise, since linking only ran once at creation time.
+      // Re-check on every lookup so it self-heals the moment a matching
+      // profile shows up.
+      if (!existing.linked_user_id) {
+        const { data: profileMatch } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('phone', phone)
+          .maybeSingle();
+
+        if (profileMatch?.id) {
+          const { data: healed, error: healError } = await supabase
+            .from('contacts')
+            .update({ linked_user_id: profileMatch.id })
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (!healError && healed) {
+            return { contact: healed as Contact, wasExisting: true };
+          }
+        }
+      }
       return { contact: existing as Contact, wasExisting: true };
     }
   }

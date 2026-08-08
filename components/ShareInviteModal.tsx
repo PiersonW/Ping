@@ -160,6 +160,7 @@ export default function ShareInviteModal({ visible, eventId, eventTitle, onClose
     const notifiableUserIds = rows.map((r) => r.user_id).filter(Boolean);
     notify(notifiableUserIds, "You're invited! 🎉", `${eventTitle || 'An event'} — tap to view and RSVP`, {
       eventId,
+      type: 'invite',
     });
 
     if (skippedNames.length > 0) {

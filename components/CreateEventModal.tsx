@@ -42,9 +42,13 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   onCreated: (status: 'sent' | 'draft') => void;
+  // Date the user had selected on the home calendar (YYYY-MM-DD), if any —
+  // pre-fills the date field so tapping + after picking a day doesn't
+  // default back to today.
+  initialDate?: string | null;
 };
 
-export default function CreateEventModal({ visible, onClose, onCreated }: Props) {
+export default function CreateEventModal({ visible, onClose, onCreated, initialDate }: Props) {
   const { session } = useAuth();
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
@@ -230,10 +234,18 @@ export default function CreateEventModal({ visible, onClose, onCreated }: Props)
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const buildInitialEventDate = () => {
+    if (!initialDate) return new Date();
+    const [y, m, d] = initialDate.split('-').map(Number);
+    const next = new Date();
+    next.setFullYear(y, m - 1, d);
+    return next;
+  };
+
   const resetForm = () => {
     setTitle('');
     setLocation('');
-    setEventDate(new Date());
+    setEventDate(buildInitialEventDate());
     setSelectedContactIds([]);
     setSelectedGroupIds([]);
     setExcludedGroupMemberIds([]);
@@ -380,6 +392,7 @@ export default function CreateEventModal({ visible, onClose, onCreated }: Props)
           const notifiableUserIds = rows.map((r) => r.user_id).filter(Boolean);
           notify(notifiableUserIds, "You're invited! 🎉", `${title} — tap to view and RSVP`, {
             eventId: eventRow.id,
+            type: 'invite',
           });
         }
       }

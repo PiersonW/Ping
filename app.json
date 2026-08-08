@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ping-app",
+    "name": "Ping",
     "slug": "ping-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pingapp.mobile",
+      "buildNumber": "1",
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
@@ -40,7 +43,23 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-notifications",
+      "expo-apple-authentication",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Ping uses your contacts to help you invite friends and family to events and groups."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ping uses your photo library to let you add a photo to events and your profile.",
+          "cameraPermission": "Ping uses your camera to let you add a photo to events and your profile.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

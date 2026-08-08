@@ -20,6 +20,7 @@ import ShareInviteModal from './ShareInviteModal';
 import EditEventModal, { EditableEvent } from './EditEventModal';
 import { colors, cardFrameGradient } from '../lib/theme';
 import { notify } from '../lib/notify';
+import { scheduleEventReminder, cancelEventReminder } from '../lib/eventReminders';
 import { displayName } from '../lib/displayName';
 
 type RsvpStatus = 'pending' | 'accepted' | 'declined' | 'interested';
@@ -39,6 +40,7 @@ type InviteeRow = {
   id: string;
   user_id: string | null;
   rsvp_status: RsvpStatus;
+  reminder_minutes_before: number | null;
   profiles: { full_name: string | null; email: string | null } | null;
   contacts: { name: string | null } | null;
 };
@@ -57,6 +59,13 @@ const RSVP_OPTIONS: { label: string; value: RsvpStatus }[] = [
   { label: 'Accept', value: 'accepted' },
   { label: 'Interested', value: 'interested' },
   { label: 'Decline', value: 'declined' },
+];
+
+const REMINDER_OPTIONS: { label: string; value: number | null }[] = [
+  { label: 'Off', value: null },
+  { label: '30 min', value: 30 },
+  { label: '1 hr', value: 60 },
+  { label: '1 day', value: 1440 },
 ];
 
 type Props = {
@@ -103,7 +112,7 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
         supabase.from('events').select('*').eq('id', eventId).single(),
         supabase
           .from('invitees')
-          .select('id, user_id, rsvp_status, profiles(full_name, email), contacts(name)')
+          .select('id, user_id, rsvp_status, reminder_minutes_before, profiles(full_name, email), contacts(name)')
           .eq('event_id', eventId),
         supabase
           .from('items')
@@ -171,11 +180,35 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
 
     if (!isHost && event.host_id) {
       const statusLabel = status === 'accepted' ? 'accepted' : status === 'declined' ? 'declined' : 'is interested in';
-      notify([event.host_id], 'RSVP update', `${myName()} ${statusLabel} ${event.title}`, { eventId });
+      notify([event.host_id], 'RSVP update', `${myName()} ${statusLabel} ${event.title}`, {
+        eventId,
+        type: 'rsvp_update',
+      });
     }
 
     await fetchData();
     setUpdating(false);
+  };
+
+  const handleSetReminder = async (minutesBefore: number | null) => {
+    if (!myInvitee || !event || !session?.user?.id) return;
+
+    const { error } = await supabase
+      .from('invitees')
+      .update({ reminder_minutes_before: minutesBefore })
+      .eq('id', myInvitee.id);
+    if (error) {
+      console.error('Error updating reminder:', error);
+      return;
+    }
+
+    if (minutesBefore === null) {
+      await cancelEventReminder(session.user.id, event.id);
+    } else {
+      await scheduleEventReminder(session.user.id, event.id, event.title, new Date(event.event_date), minutesBefore);
+    }
+
+    await fetchData();
   };
 
   const handleAddItem = async () => {
@@ -270,6 +303,7 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
     if (nextQty > prevQty && !isHost && event?.host_id) {
       notify([event.host_id], 'Item claimed', `${myName()} claimed "${item.name}" for ${event.title}`, {
         eventId,
+        type: 'item_claimed',
       });
     }
 
@@ -394,6 +428,29 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
             <Text style={styles.notInvitedText}>You haven't been invited to this event.</Text>
           )}
         </View>
+
+        {myInvitee?.rsvp_status === 'accepted' && (
+          <View style={styles.rsvpSection}>
+            <Text style={styles.sectionLabel}>Remind me before</Text>
+            <View style={styles.rsvpRow}>
+              {REMINDER_OPTIONS.map((opt) => {
+                const selected = (myInvitee.reminder_minutes_before ?? null) === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.label}
+                    style={[styles.rsvpButton, selected && styles.rsvpButtonSelected]}
+                    onPress={() => handleSetReminder(opt.value)}
+                    disabled={updating}
+                  >
+                    <Text style={[styles.rsvpButtonText, selected && styles.rsvpButtonTextSelected]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         <View style={styles.summarySection}>
           <Text style={styles.sectionLabel}>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,17 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { supabase } from '../../supabase';
 import { colors } from '../../lib/theme';
 
 WebBrowser.maybeCompleteAuthSession();
+
+const logoBlue = require('../../assets/images/ping-logo-blue.png');
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -24,6 +28,13 @@ export default function LoginScreen() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
+    }
+  }, []);
 
   const handleEmailAuth = async () => {
     if (!email || !password) {
@@ -54,7 +65,7 @@ export default function LoginScreen() {
 
     // Uses the app's own custom URL scheme (set in app.json) rather than
     // Expo's auth proxy. Only works in a custom dev client / standalone
-    // build, NOT in Expo Go. See README for the app.json + EAS steps.
+    // build, NOT in Expo Go — see eas.json for the build profiles.
     const redirectUri = AuthSession.makeRedirectUri({
       scheme: 'pingapp',
       path: 'auth/callback',
@@ -95,6 +106,36 @@ export default function LoginScreen() {
     setGoogleLoading(false);
   };
 
+  const handleAppleLogin = async () => {
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!credential.identityToken) {
+        Alert.alert('Apple sign-in failed', 'No identity token returned.');
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+      });
+
+      if (error) {
+        Alert.alert('Apple sign-in failed', error.message);
+      }
+    } catch (err: any) {
+      // Apple's own picker throws this when the user dismisses it — not a
+      // real failure, so don't surface an alert for it.
+      if (err.code === 'ERR_REQUEST_CANCELED') return;
+      Alert.alert('Apple sign-in failed', err?.message ?? 'Unknown error');
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -104,8 +145,18 @@ export default function LoginScreen() {
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-      <Text style={styles.header}>Ping</Text>
+      <Image source={logoBlue} style={styles.logo} resizeMode="contain" />
       <Text style={styles.subheader}>{isSignUp ? 'Create an account' : 'Welcome back'}</Text>
+
+      {appleAvailable && (
+        <AppleAuthentication.AppleAuthenticationButton
+          buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+          cornerRadius={10}
+          style={styles.appleButton}
+          onPress={handleAppleLogin}
+        />
+      )}
 
       <TouchableOpacity
         style={styles.googleButton}
@@ -161,8 +212,9 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, backgroundColor: colors.background, padding: 24, justifyContent: 'center' },
-  header: { color: colors.textPrimary, fontSize: 32, fontWeight: '800', textAlign: 'center', marginBottom: 4 },
+  logo: { height: 64, aspectRatio: 355 / 214, alignSelf: 'center', marginBottom: 4 },
   subheader: { color: colors.textSecondary, fontSize: 16, textAlign: 'center', marginBottom: 32 },
+  appleButton: { height: 48, marginBottom: 12 },
   googleButton: {
     backgroundColor: colors.surface,
     borderWidth: 1,

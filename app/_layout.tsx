@@ -3,6 +3,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Slot } from 'expo-router';
 import { AuthProvider, useAuth } from '../lib/AuthContext';
+import { NotificationsProvider } from '../lib/NotificationsContext';
 import LoginScreen from './(auth)/login';
 import { colors } from '../lib/theme';
 
@@ -21,7 +22,11 @@ function RootNavigation() {
     return <LoginScreen />;
   }
 
-  return <Slot />;
+  return (
+    <NotificationsProvider>
+      <Slot />
+    </NotificationsProvider>
+  );
 }
 
 export default function RootLayout() {

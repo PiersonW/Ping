@@ -167,7 +167,7 @@ export default function GroupMessageThread({ groupId }: Props) {
       recipientIds,
       groupRow?.name ? `New message — ${groupRow.name}` : 'New group message',
       `${senderDisplayName}: ${body}`,
-      { groupId }
+      { groupId, type: 'group_message' }
     );
   };
 

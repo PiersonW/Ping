@@ -19,6 +19,7 @@
     "@supabase/supabase-js": "^2.112.0",
     "base64-arraybuffer": "^1.0.2",
     "expo": "~54.0.35",
+    "expo-apple-authentication": "~8.0.8",
     "expo-auth-session": "~7.0.11",
     "expo-constants": "~18.0.13",
     "expo-contacts": "~15.0.11",
@@ -52,6 +53,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "eas-cli": "^21.7.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
     "typescript": "~5.9.2"
