@@ -402,6 +402,16 @@ export default function HomeScreen() {
     dragY.value = withSpring(bottomLimit, SPRING_CONFIG);
   };
 
+  // A guaranteed, tap-based way back to the calendar/Upcoming view that
+  // doesn't depend on successfully grabbing and dragging the handle - the
+  // drag alone has been the single most fragile part of this screen, so
+  // this exists as a plain button that can't get stuck the way a gesture
+  // recognizer can.
+  const closeMessages = () => {
+    if (!ready) return;
+    dragY.value = withSpring(0, SPRING_CONFIG);
+  };
+
   // Content type is a pure function of which side of center the handle is
   // on — no separate toggle/threshold bookkeeping needed.
   useAnimatedReaction(
@@ -547,6 +557,9 @@ export default function HomeScreen() {
               : "Message Board"}
       </Text>
       <View style={styles.listHeaderActions}>
+        <TouchableOpacity onPress={closeMessages}>
+          <Text style={styles.clearFilterText}>▲ Calendar</Text>
+        </TouchableOpacity>
         {boardView === "events" && selectedDate && (
           <TouchableOpacity onPress={() => setSelectedDate(null)}>
             <Text style={styles.clearFilterText}>Show all</Text>

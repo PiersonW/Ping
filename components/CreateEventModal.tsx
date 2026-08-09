@@ -78,7 +78,6 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
 
   const dragY = useRef(new Animated.Value(0)).current;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
     if (visible) {
@@ -90,13 +89,11 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => {
+    const showSub = Keyboard.addListener(showEvent, () => {
       setKeyboardVisible(true);
-      setKeyboardHeight(e.endCoordinates.height);
     });
     const hideSub = Keyboard.addListener(hideEvent, () => {
       setKeyboardVisible(false);
-      setKeyboardHeight(0);
     });
     return () => {
       showSub.remove();
@@ -710,7 +707,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
               densely-packed form reliably dismisses the keyboard on tap. */}
           {keyboardVisible && (
             <TouchableOpacity
-              style={[styles.keyboardDoneBar, { bottom: keyboardHeight }]}
+              style={styles.keyboardDoneBar}
               onPress={() => Keyboard.dismiss()}
             >
               <Text style={styles.keyboardDoneText}>Done</Text>
@@ -805,9 +802,15 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', gap: 12, marginTop: 12 },
   footerButton: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   keyboardDoneBar: {
+    // KeyboardAvoidingView (wrapping the whole modal, see below) already
+    // shifts this card up by the keyboard's height - bottom:0 here lands
+    // right above the keyboard for free. An earlier version also offset
+    // this by keyboardHeight on top of that, double-compensating and
+    // landing the bar in the middle of the screen instead.
     position: 'absolute',
     left: 0,
     right: 0,
+    bottom: 0,
     alignItems: 'center',
     paddingVertical: 10,
     backgroundColor: colors.surface,
