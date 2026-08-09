@@ -20,10 +20,9 @@ import ShareInviteModal from './ShareInviteModal';
 import EditEventModal, { EditableEvent } from './EditEventModal';
 import { colors, cardFrameGradient } from '../lib/theme';
 import { notify } from '../lib/notify';
+import { submitRsvp, RsvpStatus } from '../lib/rsvp';
 import { scheduleEventReminder, cancelEventReminder } from '../lib/eventReminders';
 import { displayName } from '../lib/displayName';
-
-type RsvpStatus = 'pending' | 'accepted' | 'declined' | 'interested';
 
 type EventDetail = {
   id: string;
@@ -55,7 +54,7 @@ type ItemRow = {
   item_claims: ClaimRow[];
 };
 
-const RSVP_OPTIONS: { label: string; value: RsvpStatus }[] = [
+const RSVP_OPTIONS: { label: string; value: 'accepted' | 'declined' | 'interested' }[] = [
   { label: 'Accept', value: 'accepted' },
   { label: 'Interested', value: 'interested' },
   { label: 'Decline', value: 'declined' },
@@ -134,7 +133,25 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
     fetchData().finally(() => setLoading(false));
   }, [fetchData]);
 
-  const handleRsvp = async (status: RsvpStatus) => {
+  // Without this, a host looking at the guest list has no way to see an
+  // RSVP someone else just submitted short of closing and reopening the
+  // event — this keeps it live the same way notifications already are.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`invitees-${eventId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'invitees', filter: `event_id=eq.${eventId}` },
+        () => fetchData()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [eventId, fetchData]);
+
+  const handleRsvp = async (status: 'accepted' | 'declined' | 'interested') => {
     if (!session?.user?.id || !event) return;
 
     if (!isHost && !myInvitee) {
@@ -144,47 +161,15 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
 
     setUpdating(true);
 
-    let inviteeId = myInvitee?.id || null;
-
-    if (myInvitee) {
-      const { error } = await supabase
-        .from('invitees')
-        .update({ rsvp_status: status, responded_at: new Date().toISOString() })
-        .eq('id', myInvitee.id);
-      if (error) console.error('Error updating RSVP:', error);
-    } else {
-      const { data, error } = await supabase
-        .from('invitees')
-        .insert([
-          {
-            event_id: eventId,
-            user_id: session.user.id,
-            rsvp_status: status,
-            invited_via: 'app',
-            responded_at: new Date().toISOString(),
-          },
-        ])
-        .select()
-        .single();
-      if (error) console.error('Error creating RSVP:', error);
-      inviteeId = data?.id || null;
-    }
-
-    if (status === 'declined' && inviteeId) {
-      const { error: releaseError } = await supabase
-        .from('item_claims')
-        .delete()
-        .eq('invitee_id', inviteeId);
-      if (releaseError) console.error('Error releasing claims:', releaseError);
-    }
-
-    if (!isHost && event.host_id) {
-      const statusLabel = status === 'accepted' ? 'accepted' : status === 'declined' ? 'declined' : 'is interested in';
-      notify([event.host_id], 'RSVP update', `${myName()} ${statusLabel} ${event.title}`, {
-        eventId,
-        type: 'rsvp_update',
-      });
-    }
+    await submitRsvp({
+      eventId,
+      hostId: event.host_id,
+      eventTitle: event.title,
+      userId: session.user.id,
+      myInviteeId: myInvitee?.id || null,
+      responderName: myName(),
+      status,
+    });
 
     await fetchData();
     setUpdating(false);
@@ -620,6 +605,8 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
         visible={shareModalVisible}
         eventId={event.id}
         eventTitle={event.title}
+        eventDate={event.event_date}
+        location={event.location}
         onClose={() => setShareModalVisible(false)}
         onInvited={async () => {
           setShareModalVisible(false);

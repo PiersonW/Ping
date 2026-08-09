@@ -20,7 +20,8 @@ import { Calendar } from 'react-native-calendars';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
-import { findOrCreateContact, getAlreadyInvitedPhones, normalizePhone } from '../lib/phone';
+import { findOrCreateContact, healContactLink, getAlreadyInvitedPhones, normalizePhone } from '../lib/phone';
+import { sendSmsInvites } from '../lib/sms';
 import { uploadEventImage } from '../lib/imageUpload';
 import { pickEventImage } from '../lib/imagePicker';
 import { colors, cardFrameGradient, calendarTheme } from '../lib/theme';
@@ -377,8 +378,16 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       }
 
       if (toInvite.length > 0) {
-        const rows = toInvite.map((cid) => {
-          const contact = contacts.find((c) => c.id === cid);
+        // Re-check each contact's account link right before inviting — see
+        // the matching comment in CreateEventModal.
+        const healedContacts = await Promise.all(
+          toInvite.map(async (cid) => {
+            const contact = contacts.find((c) => c.id === cid);
+            return contact ? healContactLink(supabase, contact) : contact;
+          })
+        );
+        const rows = toInvite.map((cid, i) => {
+          const contact = healedContacts[i];
           return {
             event_id: event.id,
             contact_id: cid,
@@ -387,7 +396,10 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
             invited_via: contact?.linked_user_id ? 'app' : contact?.phone ? 'sms' : 'email',
           };
         });
-        const { error: inviteeError } = await supabase.from('invitees').insert(rows);
+        const { data: insertedInvitees, error: inviteeError } = await supabase
+          .from('invitees')
+          .insert(rows)
+          .select();
         if (inviteeError) {
           console.error('Error creating invitees:', inviteeError);
         } else {
@@ -396,6 +408,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
             eventId: event.id,
             type: 'invite',
           });
+          sendSmsInvites(insertedInvitees || [], healedContacts, title, eventDate, location);
         }
       }
     }
@@ -408,44 +421,54 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
     if (!event) return;
     setSubmitting(true);
 
-    if (shouldNotify) {
-      const { data: allInvitees } = await supabase
-        .from('invitees')
-        .select('user_id')
-        .eq('event_id', event.id);
-      const recipientIds = (allInvitees || [])
-        .map((i) => i.user_id)
-        .filter((id): id is string => !!id && id !== session?.user?.id);
-      if (recipientIds.length > 0) {
-        notify(recipientIds, 'Event canceled', `"${title}" has been canceled.`, {
-          eventId: event.id,
-          type: 'event_canceled',
-        });
+    // Everything below used to run as one unguarded chain of awaits — if
+    // any single step threw (a network blip, an RLS rejection), the catch
+    // block below didn't exist yet, so setSubmitting(false) never ran and
+    // the modal was stuck showing its "deleting" state forever, which reads
+    // as the whole app freezing on delete.
+    try {
+      if (shouldNotify) {
+        const { data: allInvitees } = await supabase
+          .from('invitees')
+          .select('user_id')
+          .eq('event_id', event.id);
+        const recipientIds = (allInvitees || [])
+          .map((i) => i.user_id)
+          .filter((id): id is string => !!id && id !== session?.user?.id);
+        if (recipientIds.length > 0) {
+          notify(recipientIds, 'Event canceled', `"${title}" has been canceled.`, {
+            eventId: event.id,
+            type: 'event_canceled',
+          });
+        }
       }
-    }
 
-    // Cascade delete configuration on the DB side is unknown, so clean up
-    // dependents manually rather than risk a foreign-key failure.
-    const { data: eventItems } = await supabase.from('items').select('id').eq('event_id', event.id);
-    const itemIds = (eventItems || []).map((i) => i.id);
-    if (itemIds.length > 0) {
-      await supabase.from('item_claims').delete().in('item_id', itemIds);
-    }
-    await supabase.from('items').delete().eq('event_id', event.id);
-    await supabase.from('messages').delete().eq('event_id', event.id);
-    await supabase.from('invitees').delete().eq('event_id', event.id);
+      // Cascade delete configuration on the DB side is unknown, so clean up
+      // dependents manually rather than risk a foreign-key failure.
+      const { data: eventItems } = await supabase.from('items').select('id').eq('event_id', event.id);
+      const itemIds = (eventItems || []).map((i) => i.id);
+      if (itemIds.length > 0) {
+        await supabase.from('item_claims').delete().in('item_id', itemIds);
+      }
+      await supabase.from('items').delete().eq('event_id', event.id);
+      await supabase.from('messages').delete().eq('event_id', event.id);
+      await supabase.from('invitees').delete().eq('event_id', event.id);
 
-    const { error } = await supabase.from('events').delete().eq('id', event.id);
+      const { error } = await supabase.from('events').delete().eq('id', event.id);
 
-    setSubmitting(false);
+      if (error) {
+        console.error('Error deleting event:', error);
+        Alert.alert('Error', 'Could not delete this event.');
+        return;
+      }
 
-    if (error) {
-      console.error('Error deleting event:', error);
+      onDeleted();
+    } catch (err) {
+      console.error('Error deleting event:', err);
       Alert.alert('Error', 'Could not delete this event.');
-      return;
+    } finally {
+      setSubmitting(false);
     }
-
-    onDeleted();
   };
 
   const confirmDelete = () => {

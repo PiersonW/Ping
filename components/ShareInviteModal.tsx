@@ -13,7 +13,8 @@ import {
 } from 'react-native';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
-import { findOrCreateContact, getAlreadyInvitedPhones, normalizePhone } from '../lib/phone';
+import { findOrCreateContact, healContactLink, getAlreadyInvitedPhones, normalizePhone } from '../lib/phone';
+import { sendSmsInvites } from '../lib/sms';
 import { colors } from '../lib/theme';
 import { notify } from '../lib/notify';
 import ImportContactsModal from './ImportContactsModal';
@@ -30,11 +31,21 @@ type Props = {
   visible: boolean;
   eventId: string;
   eventTitle?: string;
+  eventDate?: string;
+  location?: string;
   onClose: () => void;
   onInvited: () => void;
 };
 
-export default function ShareInviteModal({ visible, eventId, eventTitle, onClose, onInvited }: Props) {
+export default function ShareInviteModal({
+  visible,
+  eventId,
+  eventTitle,
+  eventDate,
+  location,
+  onClose,
+  onInvited,
+}: Props) {
   const { session } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -137,8 +148,16 @@ export default function ShareInviteModal({ visible, eventId, eventTitle, onClose
       return;
     }
 
-    const rows = toInvite.map((cid) => {
-      const contact = contacts.find((c) => c.id === cid);
+    // Re-check each contact's account link right before inviting — see the
+    // matching comment in CreateEventModal.
+    const healedContacts = await Promise.all(
+      toInvite.map(async (cid) => {
+        const contact = contacts.find((c) => c.id === cid);
+        return contact ? healContactLink(supabase, contact) : contact;
+      })
+    );
+    const rows = toInvite.map((cid, i) => {
+      const contact = healedContacts[i];
       return {
         event_id: eventId,
         contact_id: cid,
@@ -148,7 +167,7 @@ export default function ShareInviteModal({ visible, eventId, eventTitle, onClose
       };
     });
 
-    const { error } = await supabase.from('invitees').insert(rows);
+    const { data: insertedInvitees, error } = await supabase.from('invitees').insert(rows).select();
     setSubmitting(false);
 
     if (error) {
@@ -162,6 +181,9 @@ export default function ShareInviteModal({ visible, eventId, eventTitle, onClose
       eventId,
       type: 'invite',
     });
+    if (eventDate) {
+      sendSmsInvites(insertedInvitees || [], healedContacts, eventTitle || 'An event', new Date(eventDate), location || '');
+    }
 
     if (skippedNames.length > 0) {
       Alert.alert(

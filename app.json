@@ -54,6 +54,12 @@
       "expo-notifications",
       "expo-apple-authentication",
       [
+        "expo-calendar",
+        {
+          "calendarPermission": "Ping checks your calendar for conflicts when you're invited to an event."
+        }
+      ],
+      [
         "expo-contacts",
         {
           "contactsPermission": "Ping uses your contacts to help you invite friends and family to events and groups."

@@ -20,6 +20,30 @@ export type Contact = {
   linked_user_id: string | null;
 };
 
+type MinimalContact = { id: string; phone: string | null; linked_user_id: string | null };
+
+// A contact created before the other person had an account (or before
+// they'd set this phone number) is stuck with linked_user_id: null forever
+// otherwise, since linking only ran once at creation time. Re-check right
+// before it matters (adding it, or sending an invite to it) so it self-heals
+// the moment a matching profile shows up. Generic over T so each screen's
+// own (slightly different) local Contact shape can be passed straight in.
+export async function healContactLink<T extends MinimalContact>(supabase: SupabaseClient, contact: T): Promise<T> {
+  if (contact.linked_user_id || !contact.phone) return contact;
+
+  const { data: profileMatch } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('phone', contact.phone)
+    .maybeSingle();
+
+  if (!profileMatch?.id) return contact;
+
+  const { error } = await supabase.from('contacts').update({ linked_user_id: profileMatch.id }).eq('id', contact.id);
+
+  return error ? contact : { ...contact, linked_user_id: profileMatch.id };
+}
+
 export async function findOrCreateContact(
   supabase: SupabaseClient,
   ownerId: string,
@@ -37,31 +61,8 @@ export async function findOrCreateContact(
       .maybeSingle();
 
     if (existing) {
-      // A contact created before the other person had an account (or before
-      // they'd set this phone number) is stuck with linked_user_id: null
-      // forever otherwise, since linking only ran once at creation time.
-      // Re-check on every lookup so it self-heals the moment a matching
-      // profile shows up.
-      if (!existing.linked_user_id) {
-        const { data: profileMatch } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('phone', phone)
-          .maybeSingle();
-
-        if (profileMatch?.id) {
-          const { data: healed, error: healError } = await supabase
-            .from('contacts')
-            .update({ linked_user_id: profileMatch.id })
-            .eq('id', existing.id)
-            .select()
-            .single();
-          if (!healError && healed) {
-            return { contact: healed as Contact, wasExisting: true };
-          }
-        }
-      }
-      return { contact: existing as Contact, wasExisting: true };
+      const healed = await healContactLink(supabase, existing as Contact);
+      return { contact: healed, wasExisting: true };
     }
   }
 

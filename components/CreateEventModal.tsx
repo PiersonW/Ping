@@ -20,7 +20,8 @@ import { Calendar } from 'react-native-calendars';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
-import { findOrCreateContact } from '../lib/phone';
+import { findOrCreateContact, healContactLink } from '../lib/phone';
+import { sendSmsInvites } from '../lib/sms';
 import { uploadEventImage } from '../lib/imageUpload';
 import { pickEventImage } from '../lib/imagePicker';
 import { colors, cardFrameGradient, calendarTheme } from '../lib/theme';
@@ -375,8 +376,18 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
     if (status === 'sent') {
       const contactIds = resolveInviteeContactIds();
       if (contactIds.length > 0) {
-        const rows = contactIds.map((cid) => {
-          const contact = contacts.find((c) => c.id === cid);
+        // Re-check each contact's account link right before inviting —
+        // the locally-loaded list can be stale if they signed up after
+        // being added, and a stuck null link means the invite (and its
+        // notification) never reaches anyone.
+        const healedContacts = await Promise.all(
+          contactIds.map(async (cid) => {
+            const contact = contacts.find((c) => c.id === cid);
+            return contact ? healContactLink(supabase, contact) : contact;
+          })
+        );
+        const rows = contactIds.map((cid, i) => {
+          const contact = healedContacts[i];
           return {
             event_id: eventRow.id,
             contact_id: cid,
@@ -385,7 +396,10 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
             invited_via: contact?.linked_user_id ? 'app' : contact?.phone ? 'sms' : 'email',
           };
         });
-        const { error: inviteeError } = await supabase.from('invitees').insert(rows);
+        const { data: insertedInvitees, error: inviteeError } = await supabase
+          .from('invitees')
+          .insert(rows)
+          .select();
         if (inviteeError) {
           console.error('Error creating invitees:', inviteeError);
         } else {
@@ -394,6 +408,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
             eventId: eventRow.id,
             type: 'invite',
           });
+          sendSmsInvites(insertedInvitees || [], healedContacts, title, eventDate, location);
         }
       }
     }

@@ -120,13 +120,32 @@ export default function LoginScreen() {
         return;
       }
 
-      const { error } = await supabase.auth.signInWithIdToken({
+      const { data, error } = await supabase.auth.signInWithIdToken({
         provider: 'apple',
         token: credential.identityToken,
       });
 
       if (error) {
         Alert.alert('Apple sign-in failed', error.message);
+        return;
+      }
+
+      // Apple only ever includes the name in this first on-device
+      // authorization response, never in the identity token itself — if we
+      // don't capture it right here, it's gone for good on every later
+      // sign-in for this Apple ID.
+      const fullName = [credential.fullName?.givenName, credential.fullName?.familyName]
+        .filter(Boolean)
+        .join(' ');
+      if (fullName && data.user) {
+        const { data: existing } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', data.user.id)
+          .maybeSingle();
+        if (!existing?.full_name) {
+          await supabase.from('profiles').update({ full_name: fullName }).eq('id', data.user.id);
+        }
       }
     } catch (err: any) {
       // Apple's own picker throws this when the user dismisses it — not a

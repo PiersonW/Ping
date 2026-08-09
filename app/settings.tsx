@@ -17,6 +17,7 @@ import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import { pickProfileImage } from '../lib/imagePicker';
 import { uploadAvatarImage } from '../lib/imageUpload';
+import { normalizePhone } from '../lib/phone';
 import { colors } from '../lib/theme';
 
 export default function SettingsScreen() {
@@ -68,11 +69,14 @@ export default function SettingsScreen() {
       }
     }
 
+    // Must match the format contacts.phone is stored in (digits only, see
+    // lib/phone.ts) or the account-linking lookup that matches an invitee's
+    // phone against a profile can never find this row.
     const { error: profileError } = await supabase
       .from('profiles')
       .update({
         full_name: fullName.trim() || null,
-        phone: phone.trim() || null,
+        phone: normalizePhone(phone) || null,
         avatar_url: newAvatarUrl,
       })
       .eq('id', session.user.id);

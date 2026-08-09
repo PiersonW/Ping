@@ -44,7 +44,7 @@ export function notify(
 
   supabase.functions
     .invoke('send-push', {
-      body: { user_ids: ids, title, body, data: { eventId: opts?.eventId, groupId: opts?.groupId } },
+      body: { user_ids: ids, title, body, data: { eventId: opts?.eventId, groupId: opts?.groupId, type: opts?.type } },
     })
     .catch((err) => console.error('Push notification failed:', err));
 }

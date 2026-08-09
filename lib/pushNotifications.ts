@@ -5,13 +5,18 @@ import { Platform } from 'react-native';
 import { supabase } from '../supabase';
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  // Invite notifications are handled by the in-app InvitePopup instead —
+  // showing the native banner too while foregrounded would be redundant.
+  handleNotification: async (notification) => {
+    const isInvite = notification.request.content.data?.type === 'invite';
+    return {
+      shouldShowAlert: !isInvite,
+      shouldShowBanner: !isInvite,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 export async function registerForPushNotifications(userId: string) {
