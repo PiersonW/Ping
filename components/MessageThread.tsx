@@ -120,6 +120,23 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
             if (prev.some((m) => m.id === row.id)) return prev;
             return [{ ...row, profiles: null }, ...prev];
           });
+
+          // postgres_changes payloads are the raw row only - no profiles
+          // join support - so the sender's name is fetched separately here
+          // and patched onto the message once it arrives.
+          if (row.sender_id !== session?.user?.id) {
+            supabase
+              .from('profiles')
+              .select('full_name, email')
+              .eq('id', row.sender_id)
+              .single()
+              .then(({ data }) => {
+                if (!data) return;
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === row.id ? { ...m, profiles: data } : m))
+                );
+              });
+          }
         }
       )
       .subscribe();
@@ -127,7 +144,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [eventId, fetchLatest]);
+  }, [eventId, fetchLatest, session?.user?.id]);
 
   const handleSend = async () => {
     const body = draft.trim();
@@ -229,7 +246,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
           // padding), so only the keyboard height beyond that needs to be
           // reserved here, plus a small buffer so the input floats clear
           // of the keyboard instead of touching it.
-          { marginBottom: keyboardHeight > 0 ? keyboardHeight - 20 + 12 : 12 },
+          { marginBottom: keyboardHeight > 0 ? keyboardHeight - 20 + 28 : 12 },
         ]}
       >
         <TextInput

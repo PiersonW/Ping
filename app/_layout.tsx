@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Slot, useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { AuthProvider, useAuth } from '../lib/AuthContext';
 import { NotificationsProvider, useNotificationsContext } from '../lib/NotificationsContext';
 import { useProfilePhone } from '../lib/useProfilePhone';
@@ -48,7 +48,7 @@ function RootNavigation() {
 
   return (
     <NotificationsProvider>
-      <Slot />
+      <Stack screenOptions={{ headerShown: false }} />
       <InvitePopupHost />
     </NotificationsProvider>
   );

@@ -118,6 +118,23 @@ export default function GroupMessageThread({ groupId }: Props) {
             if (prev.some((m) => m.id === row.id)) return prev;
             return [{ ...row, profiles: null }, ...prev];
           });
+
+          // postgres_changes payloads are the raw row only - no profiles
+          // join support - so the sender's name is fetched separately here
+          // and patched onto the message once it arrives.
+          if (row.sender_id !== session?.user?.id) {
+            supabase
+              .from('profiles')
+              .select('full_name, email')
+              .eq('id', row.sender_id)
+              .single()
+              .then(({ data }) => {
+                if (!data) return;
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === row.id ? { ...m, profiles: data } : m))
+                );
+              });
+          }
         }
       )
       .subscribe();
@@ -125,7 +142,7 @@ export default function GroupMessageThread({ groupId }: Props) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [groupId, fetchLatest]);
+  }, [groupId, fetchLatest, session?.user?.id]);
 
   const handleSend = async () => {
     const body = draft.trim();
@@ -223,7 +240,7 @@ export default function GroupMessageThread({ groupId }: Props) {
       <View
         style={[
           styles.inputRow,
-          { marginBottom: keyboardHeight > 0 ? keyboardHeight - 20 + 12 : 12 },
+          { marginBottom: keyboardHeight > 0 ? keyboardHeight - 20 + 28 : 12 },
         ]}
       >
         <TextInput

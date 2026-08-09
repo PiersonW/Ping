@@ -102,6 +102,21 @@ export function useNotifications(userId?: string | null) {
           setNotifications((prev) => (prev.some((n) => n.id === row.id) ? prev : [row, ...prev]));
         }
       )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${userId}` },
+        (payload) => {
+          // A repeated chat message updates its existing unread row in
+          // place (see lib/notify.ts consolidateMessageNotification)
+          // rather than inserting a new one — move it back to the top with
+          // its refreshed body/timestamp.
+          const row = payload.new as NotificationRow;
+          setNotifications((prev) => {
+            const rest = prev.filter((n) => n.id !== row.id);
+            return [row, ...rest];
+          });
+        }
+      )
       .subscribe();
 
     return () => {

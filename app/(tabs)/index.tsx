@@ -1,36 +1,50 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, FlatList, Text, StyleSheet, TouchableOpacity, RefreshControl, LayoutChangeEvent } from 'react-native';
-import { Calendar } from 'react-native-calendars';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useFocusEffect, useRouter } from "expo-router";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  FlatList,
+  LayoutChangeEvent,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { Calendar } from "react-native-calendars";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  useAnimatedReaction,
-  withSpring,
-  interpolate,
   Extrapolation,
+  interpolate,
   runOnJS,
-} from 'react-native-reanimated';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { supabase } from '../../supabase';
-import EventCard, { PingEvent } from '../../components/EventCard';
-import CompactEventRow from '../../components/CompactEventRow';
-import CompactGroupRow, { PingGroup } from '../../components/CompactGroupRow';
-import CreateEventModal from '../../components/CreateEventModal';
-import EventDetailModal from '../../components/EventDetailModal';
-import GroupChatModal from '../../components/GroupChatModal';
-import ProfileMenu from '../../components/ProfileMenu';
-import PingLogoMenu from '../../components/PingLogoMenu';
-import { useAuth } from '../../lib/AuthContext';
-import { useLatestMessages } from '../../lib/useLatestMessages';
-import { useLatestGroupMessages } from '../../lib/useLatestGroupMessages';
-import { useNotificationsContext } from '../../lib/NotificationsContext';
-import { colors, calendarTheme } from '../../lib/theme';
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
+import CompactEventRow from "../../components/CompactEventRow";
+import CompactGroupRow, { PingGroup } from "../../components/CompactGroupRow";
+import CreateEventModal from "../../components/CreateEventModal";
+import EventCard, { PingEvent } from "../../components/EventCard";
+import EventDetailModal from "../../components/EventDetailModal";
+import GroupChatModal from "../../components/GroupChatModal";
+import PingLogoMenu from "../../components/PingLogoMenu";
+import ProfileMenu from "../../components/ProfileMenu";
+import { useAuth } from "../../lib/AuthContext";
+import { useNotificationsContext } from "../../lib/NotificationsContext";
+import { calendarTheme, colors } from "../../lib/theme";
+import { useLatestGroupMessages } from "../../lib/useLatestGroupMessages";
+import { useLatestMessages } from "../../lib/useLatestMessages";
+import { supabase } from "../../supabase";
 
 const toDateKey = (date: Date) => {
   const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 };
 
@@ -61,11 +75,13 @@ export default function HomeScreen() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showDraftsOnly, setShowDraftsOnly] = useState(false);
 
-  const [boardView, setBoardView] = useState<'events' | 'groups'>('events');
+  const [boardView, setBoardView] = useState<"events" | "groups">("events");
   const [groups, setGroups] = useState<PingGroup[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(true);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [selectedGroupName, setSelectedGroupName] = useState<string | null>(null);
+  const [selectedGroupName, setSelectedGroupName] = useState<string | null>(
+    null,
+  );
   const [groupChatVisible, setGroupChatVisible] = useState(false);
 
   const [isCompactMode, setIsCompactMode] = useState(false);
@@ -78,20 +94,23 @@ export default function HomeScreen() {
   const dragStart = useSharedValue(0);
   const isCompactModeShared = useSharedValue(false);
 
-  const { latestByEvent, fetchLatestFor, refresh: refreshLatestMessages } = useLatestMessages(
-    session?.user?.id
-  );
+  const {
+    latestByEvent,
+    fetchLatestFor,
+    refresh: refreshLatestMessages,
+  } = useLatestMessages(session?.user?.id);
   const {
     latestByGroup,
     fetchLatestFor: fetchLatestGroupFor,
     refresh: refreshLatestGroupMessages,
   } = useLatestGroupMessages(session?.user?.id);
-  const { unreadCount, refresh: refreshNotifications } = useNotificationsContext();
+  const { unreadCount, refresh: refreshNotifications } =
+    useNotificationsContext();
 
   useFocusEffect(
     useCallback(() => {
       refreshNotifications();
-    }, [refreshNotifications])
+    }, [refreshNotifications]),
   );
 
   const fetchEvents = useCallback(async () => {
@@ -102,16 +121,18 @@ export default function HomeScreen() {
     // CreateEventModal), so this one check covers both "you're hosting"
     // and "you were invited."
     const { data: myInvites, error: inviteError } = await supabase
-      .from('invitees')
-      .select('event_id')
-      .eq('user_id', session.user.id);
+      .from("invitees")
+      .select("event_id")
+      .eq("user_id", session.user.id);
 
     if (inviteError) {
-      console.error('Error fetching invited events:', inviteError);
+      console.error("Error fetching invited events:", inviteError);
       return;
     }
 
-    const invitedEventIds = Array.from(new Set((myInvites || []).map((i) => i.event_id)));
+    const invitedEventIds = Array.from(
+      new Set((myInvites || []).map((i) => i.event_id)),
+    );
 
     if (invitedEventIds.length === 0) {
       setEvents([]);
@@ -122,14 +143,14 @@ export default function HomeScreen() {
     // event drops off once its date passes, but a draft stays visible
     // regardless of date since it still needs to be sent or edited.
     const { data, error } = await supabase
-      .from('events')
-      .select('*')
-      .in('id', invitedEventIds)
+      .from("events")
+      .select("*")
+      .in("id", invitedEventIds)
       .or(`status.eq.draft,event_date.gte.${new Date().toISOString()}`)
-      .order('event_date', { ascending: true });
+      .order("event_date", { ascending: true });
 
     if (error) {
-      console.error('Error fetching events:', error);
+      console.error("Error fetching events:", error);
       return;
     }
     setEvents(data as PingEvent[]);
@@ -144,21 +165,33 @@ export default function HomeScreen() {
     if (!session?.user?.id) return;
     const uid = session.user.id;
 
-    const [{ data: owned, error: ownedError }, { data: memberOf, error: memberError }] = await Promise.all([
-      supabase.from('groups').select('id, name').eq('owner_id', uid),
-      supabase.from('group_members').select('group_id, groups(id, name)').eq('user_id', uid),
+    const [
+      { data: owned, error: ownedError },
+      { data: memberOf, error: memberError },
+    ] = await Promise.all([
+      supabase.from("groups").select("id, name").eq("owner_id", uid),
+      supabase
+        .from("group_members")
+        .select("group_id, groups(id, name)")
+        .eq("user_id", uid),
     ]);
 
-    if (ownedError) console.error('Error fetching owned groups:', ownedError);
-    if (memberError) console.error('Error fetching member groups:', memberError);
+    if (ownedError) console.error("Error fetching owned groups:", ownedError);
+    if (memberError)
+      console.error("Error fetching member groups:", memberError);
 
     const byId = new Map<string, PingGroup>();
-    (owned || []).forEach((g: any) => byId.set(g.id, { id: g.id, name: g.name }));
+    (owned || []).forEach((g: any) =>
+      byId.set(g.id, { id: g.id, name: g.name }),
+    );
     (memberOf || []).forEach((m: any) => {
-      if (m.groups) byId.set(m.groups.id, { id: m.groups.id, name: m.groups.name });
+      if (m.groups)
+        byId.set(m.groups.id, { id: m.groups.id, name: m.groups.name });
     });
 
-    setGroups(Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name)));
+    setGroups(
+      Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name)),
+    );
   }, [session?.user?.id]);
 
   useEffect(() => {
@@ -178,12 +211,13 @@ export default function HomeScreen() {
     }
   }, [refreshLatestGroupMessages, selectedGroupId]);
 
-  const handleCreated = async (status: 'sent' | 'draft') => {
+  const handleCreated = async (status: "sent" | "draft") => {
     setModalVisible(false);
     await fetchEvents();
     setEvents((current) => {
       const newest = [...current].sort(
-        (a, b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime()
+        (a, b) =>
+          new Date(b.event_date).getTime() - new Date(a.event_date).getTime(),
       )[0];
       if (newest) {
         setJustCreatedId(newest.id);
@@ -193,7 +227,10 @@ export default function HomeScreen() {
     });
   };
 
-  const openEvent = (event: PingEvent, options?: { startOnMessages?: boolean }) => {
+  const openEvent = (
+    event: PingEvent,
+    options?: { startOnMessages?: boolean },
+  ) => {
     setSelectedEventId(event.id);
     setOpenViaMessages(!!options?.startOnMessages);
     setDetailVisible(true);
@@ -224,35 +261,39 @@ export default function HomeScreen() {
   const visibleEvents = useMemo(() => {
     let result = events;
     if (showDraftsOnly) {
-      result = result.filter((e) => e.status === 'draft');
+      result = result.filter((e) => e.status === "draft");
     }
     if (selectedDate) {
-      result = result.filter((e) => toDateKey(new Date(e.event_date)) === selectedDate);
+      result = result.filter(
+        (e) => toDateKey(new Date(e.event_date)) === selectedDate,
+      );
     }
     return result;
   }, [events, selectedDate, showDraftsOnly]);
 
   const onDayPress = (day: { dateString: string }) => {
-    setSelectedDate((prev) => (prev === day.dateString ? null : day.dateString));
+    setSelectedDate((prev) =>
+      prev === day.dateString ? null : day.dateString,
+    );
   };
 
   // Fetch latest-message snippets lazily once compact mode is entered;
   // useLatestMessages/useLatestGroupMessages cache by id, so repeat calls
   // are cheap.
   useEffect(() => {
-    if (isCompactMode && boardView === 'events' && visibleEvents.length > 0) {
+    if (isCompactMode && boardView === "events" && visibleEvents.length > 0) {
       fetchLatestFor(visibleEvents.map((e) => e.id));
     }
   }, [isCompactMode, boardView, visibleEvents, fetchLatestFor]);
 
   useEffect(() => {
-    if (isCompactMode && boardView === 'groups' && groups.length > 0) {
+    if (isCompactMode && boardView === "groups" && groups.length > 0) {
       fetchLatestGroupFor(groups.map((g) => g.id));
     }
   }, [isCompactMode, boardView, groups, fetchLatestGroupFor]);
 
   const handleRefresh = useCallback(async () => {
-    if (boardView === 'groups') {
+    if (boardView === "groups") {
       await fetchGroups();
       if (isCompactMode) {
         await refreshLatestGroupMessages(groups.map((g) => g.id));
@@ -277,17 +318,34 @@ export default function HomeScreen() {
   const handleDetailClose = useCallback(async () => {
     setDetailVisible(false);
     await fetchEvents();
-    if (isCompactMode && boardView === 'events' && selectedEventId) {
+    if (isCompactMode && boardView === "events" && selectedEventId) {
       await refreshLatestMessages([selectedEventId]);
     }
-  }, [fetchEvents, isCompactMode, boardView, refreshLatestMessages, selectedEventId]);
+  }, [
+    fetchEvents,
+    isCompactMode,
+    boardView,
+    refreshLatestMessages,
+    selectedEventId,
+  ]);
 
   const ready = calFullHeight !== null && totalHeight !== null;
   // Three real resting points for dragY: topLimit (handle near the month
   // title, cards extended), 0 (default, handle under the calendar),
   // bottomLimit (handle parked near the + button, message rows extended).
   const topLimit = ready ? -(calFullHeight! - MIN_TOP_INSET) : 0;
-  const bottomLimit = ready ? Math.max(80, totalHeight! - calFullHeight! - FAB_CLEARANCE) : 0;
+  // Room below the calendar before it needs to start covering anything —
+  // on a small screen this can be quite small, so once the drag exceeds it
+  // the rows block starts eating into the calendar's own space too (see
+  // extraCoverable / animatedRowsBlockStyle below), mirroring how the cards
+  // sheet already covers the calendar on the other side of 0.
+  const originalRoom = ready
+    ? Math.max(0, totalHeight! - calFullHeight! - FAB_CLEARANCE)
+    : 0;
+  const extraCoverable = ready
+    ? Math.max(0, calFullHeight! - MIN_TOP_INSET)
+    : 0;
+  const bottomLimit = ready ? Math.max(80, originalRoom + extraCoverable) : 0;
 
   const handleContentLayout = (e: LayoutChangeEvent) => {
     if (totalMeasuredRef.current) return;
@@ -346,7 +404,7 @@ export default function HomeScreen() {
         isCompactModeShared.value = shouldBeCompact;
         runOnJS(setIsCompactMode)(shouldBeCompact);
       }
-    }
+    },
   );
 
   // Cards sheet and rows block are both *always* mounted — swapping one
@@ -367,47 +425,90 @@ export default function HomeScreen() {
     // Only fades out once you're pulling into rows territory (dragY > 0);
     // fully opaque for the entire rest/up range, so the default view never
     // sits mid-fade.
-    opacity: interpolate(dragY.value, [0, CROSSFADE_BAND], [1, 0], Extrapolation.CLAMP),
+    opacity: interpolate(
+      dragY.value,
+      [0, CROSSFADE_BAND],
+      [1, 0],
+      Extrapolation.CLAMP,
+    ),
     top: interpolate(
       dragY.value,
       [topLimit, 0],
       [MIN_TOP_INSET, calFullHeight ?? MIN_TOP_INSET],
-      Extrapolation.CLAMP
+      Extrapolation.CLAMP,
     ),
   }));
 
-  // Rows block: top edge fixed flush against the calendar, height grows
-  // downward as dragY increases — the handle (rendered separately, at the
-  // block's bottom edge) travels down as this grows.
-  const animatedRowsHeightStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(dragY.value, [0, CROSSFADE_BAND], [0, 1], Extrapolation.CLAMP),
-    height: interpolate(dragY.value, [0, bottomLimit], [0, bottomLimit], Extrapolation.CLAMP),
-  }));
+  // Rows block: top edge stays flush against the calendar while there's
+  // still room below it (dragY <= originalRoom); once the drag goes past
+  // that, the top itself starts rising to cover the calendar too (down to
+  // MIN_TOP_INSET, same floor the cards sheet uses), so a small screen with
+  // little natural room below the calendar can still open the board most of
+  // the way up the screen. Height always simply tracks dragY 1:1.
+  const animatedRowsBlockStyle = useAnimatedStyle(() => {
+    const calBottom = calFullHeight ?? 0;
+    const covered = interpolate(
+      dragY.value,
+      [originalRoom, bottomLimit],
+      [0, extraCoverable],
+      Extrapolation.CLAMP,
+    );
+    return {
+      opacity: interpolate(
+        dragY.value,
+        [0, CROSSFADE_BAND],
+        [0, 1],
+        Extrapolation.CLAMP,
+      ),
+      top: calBottom - covered,
+      height: interpolate(
+        dragY.value,
+        [0, bottomLimit],
+        [0, bottomLimit],
+        Extrapolation.CLAMP,
+      ),
+    };
+  });
 
   // The handle itself: a single, always-mounted element so the active
-  // gesture never gets orphaned by a conditional remount mid-drag. Rides at
-  // the top of the cards sheet for dragY<=0, and at the bottom of the
-  // growing rows block for dragY>=0.
+  // gesture never gets orphaned by a conditional remount mid-drag. It always
+  // tracks the actual boundary line between the calendar and whichever
+  // sheet is showing — the cards sheet's top for dragY<=0, the rows block's
+  // top for dragY>=0 (which only starts moving once dragY passes
+  // originalRoom, matching animatedRowsBlockStyle above).
   const animatedHandleStyle = useAnimatedStyle(() => {
     const calBottom = calFullHeight ?? MIN_TOP_INSET;
-    return {
-      transform: [
-        {
-          translateY: interpolate(
-            dragY.value,
-            [topLimit, 0, bottomLimit],
-            [MIN_TOP_INSET, calBottom, calBottom + bottomLimit],
-            Extrapolation.CLAMP
-          ),
-        },
-      ],
-    };
+    if (dragY.value <= 0) {
+      return {
+        transform: [
+          {
+            translateY: interpolate(
+              dragY.value,
+              [topLimit, 0],
+              [MIN_TOP_INSET, calBottom],
+              Extrapolation.CLAMP,
+            ),
+          },
+        ],
+      };
+    }
+    const covered = interpolate(
+      dragY.value,
+      [originalRoom, bottomLimit],
+      [0, extraCoverable],
+      Extrapolation.CLAMP,
+    );
+    return { transform: [{ translateY: calBottom - covered }] };
   });
 
   const renderListHeader = (defaultTitle: string, showDraftsToggle = false) => (
     <View style={styles.listHeaderRow}>
       <Text style={styles.pageTitle}>
-        {showDraftsOnly ? 'Drafts' : selectedDate ? 'On this day' : defaultTitle}
+        {showDraftsOnly
+          ? "Drafts"
+          : selectedDate
+            ? "On this day"
+            : defaultTitle}
       </Text>
       <View style={styles.listHeaderActions}>
         {selectedDate && (
@@ -417,8 +518,13 @@ export default function HomeScreen() {
         )}
         {showDraftsToggle && (
           <TouchableOpacity onPress={() => setShowDraftsOnly((prev) => !prev)}>
-            <Text style={[styles.draftsText, showDraftsOnly && styles.draftsTextActive]}>
-              {showDraftsOnly ? 'Drafts ✓' : 'Drafts'}
+            <Text
+              style={[
+                styles.draftsText,
+                showDraftsOnly && styles.draftsTextActive,
+              ]}
+            >
+              {showDraftsOnly ? "Drafts ✓" : "Drafts"}
             </Text>
           </TouchableOpacity>
         )}
@@ -431,37 +537,51 @@ export default function HomeScreen() {
   const renderRowsHeader = () => (
     <View style={styles.listHeaderRow}>
       <Text style={styles.pageTitle}>
-        {boardView === 'groups'
-          ? 'Groups'
+        {boardView === "groups"
+          ? "Groups"
           : showDraftsOnly
-          ? 'Drafts'
-          : selectedDate
-          ? 'On this day'
-          : 'Message Board'}
+            ? "Drafts"
+            : selectedDate
+              ? "On this day"
+              : "Message Board"}
       </Text>
       <View style={styles.listHeaderActions}>
-        {boardView === 'events' && selectedDate && (
+        {boardView === "events" && selectedDate && (
           <TouchableOpacity onPress={() => setSelectedDate(null)}>
             <Text style={styles.clearFilterText}>Show all</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity onPress={() => setBoardView('events')}>
-          <Text style={[styles.draftsText, boardView === 'events' && styles.draftsTextActive]}>Events</Text>
+        <TouchableOpacity onPress={() => setBoardView("events")}>
+          <Text
+            style={[
+              styles.draftsText,
+              boardView === "events" && styles.draftsTextActive,
+            ]}
+          >
+            Events
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setBoardView('groups')}>
-          <Text style={[styles.draftsText, boardView === 'groups' && styles.draftsTextActive]}>Groups</Text>
+        <TouchableOpacity onPress={() => setBoardView("groups")}>
+          <Text
+            style={[
+              styles.draftsText,
+              boardView === "groups" && styles.draftsTextActive,
+            ]}
+          >
+            Groups
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 
   const emptyText = showDraftsOnly
-    ? 'No drafts right now.'
+    ? "No drafts right now."
     : selectedDate
-    ? 'No events on this day.'
-    : 'No events yet — tap + to create one.';
+      ? "No events on this day."
+      : "No events yet — tap + to create one.";
 
-  const groupsEmptyText = 'No groups yet — create one from the Groups screen.';
+  const groupsEmptyText = "No groups yet — create one from the Groups screen.";
 
   return (
     <View style={styles.container}>
@@ -475,7 +595,7 @@ export default function HomeScreen() {
           <TouchableOpacity onPress={() => setModalVisible(true)}>
             <Text style={styles.createText}>Create</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/groups')}>
+          <TouchableOpacity onPress={() => router.push("/groups")}>
             <Text style={styles.groupsText}>Groups</Text>
           </TouchableOpacity>
           <ProfileMenu />
@@ -490,46 +610,68 @@ export default function HomeScreen() {
             theme={calendarTheme}
             style={styles.calendar}
             enableSwipeMonths
-            renderArrow={(direction: 'left' | 'right') => (
-              <Text style={styles.calendarArrow}>{direction === 'left' ? '‹' : '›'}</Text>
+            renderArrow={(direction: "left" | "right") => (
+              <Text style={styles.calendarArrow}>
+                {direction === "left" ? "‹" : "›"}
+              </Text>
             )}
           />
         </View>
 
         <Animated.View
           style={[styles.cardsSheet, ready && animatedCardsSheetStyle]}
-          pointerEvents={isCompactMode ? 'none' : 'auto'}
+          pointerEvents={isCompactMode ? "none" : "auto"}
         >
           <View style={styles.handleSpacer} />
-          {renderListHeader('Upcoming', true)}
+          {renderListHeader("Upcoming", true)}
           <FlatList
             style={{ flex: 1 }}
             data={visibleEvents}
             keyExtractor={(item) => item.id}
             refreshControl={
-              <RefreshControl refreshing={loading} onRefresh={handleRefresh} tintColor={colors.primary} />
+              <RefreshControl
+                refreshing={loading}
+                onRefresh={handleRefresh}
+                tintColor={colors.primary}
+              />
             }
             renderItem={({ item }) => (
-              <EventCard event={item} highlight={item.id === justCreatedId} onPress={openEvent} />
+              <EventCard
+                event={item}
+                highlight={item.id === justCreatedId}
+                onPress={openEvent}
+              />
             )}
-            ListEmptyComponent={!loading ? <Text style={styles.emptyText}>{emptyText}</Text> : null}
+            ListEmptyComponent={
+              !loading ? (
+                <Text style={styles.emptyText}>{emptyText}</Text>
+              ) : null
+            }
             contentContainerStyle={{ paddingVertical: 12, paddingBottom: 120 }}
           />
         </Animated.View>
 
         <Animated.View
-          style={[styles.rowsBlock, { top: calFullHeight ?? 0 }, ready && animatedRowsHeightStyle]}
-          pointerEvents={isCompactMode ? 'auto' : 'none'}
+          style={[
+            styles.rowsBlock,
+            !ready && { top: calFullHeight ?? 0 },
+            ready && animatedRowsBlockStyle,
+          ]}
+          pointerEvents={isCompactMode ? "auto" : "none"}
         >
           {renderRowsHeader()}
-          {boardView === 'events' ? (
+          {boardView === "events" ? (
             <FlatList
               style={{ flex: 1 }}
               data={visibleEvents}
               keyExtractor={(item) => item.id}
               extraData={latestByEvent}
               refreshControl={
-                <RefreshControl refreshing={loading} onRefresh={handleRefresh} tintColor={colors.primary} />
+                <RefreshControl
+                  refreshing={loading}
+                  onRefresh={handleRefresh}
+                  tintColor={colors.primary}
+                />
               }
               renderItem={({ item }) => (
                 <CompactEventRow
@@ -538,7 +680,11 @@ export default function HomeScreen() {
                   onPress={(e) => openEvent(e, { startOnMessages: true })}
                 />
               )}
-              ListEmptyComponent={!loading ? <Text style={styles.emptyText}>{emptyText}</Text> : null}
+              ListEmptyComponent={
+                !loading ? (
+                  <Text style={styles.emptyText}>{emptyText}</Text>
+                ) : null
+              }
             />
           ) : (
             <FlatList
@@ -547,17 +693,31 @@ export default function HomeScreen() {
               keyExtractor={(item) => item.id}
               extraData={latestByGroup}
               refreshControl={
-                <RefreshControl refreshing={loadingGroups} onRefresh={handleRefresh} tintColor={colors.primary} />
+                <RefreshControl
+                  refreshing={loadingGroups}
+                  onRefresh={handleRefresh}
+                  tintColor={colors.primary}
+                />
               }
               renderItem={({ item }) => (
-                <CompactGroupRow group={item} snippet={latestByGroup[item.id]} onPress={openGroup} />
+                <CompactGroupRow
+                  group={item}
+                  snippet={latestByGroup[item.id]}
+                  onPress={openGroup}
+                />
               )}
-              ListEmptyComponent={!loadingGroups ? <Text style={styles.emptyText}>{groupsEmptyText}</Text> : null}
+              ListEmptyComponent={
+                !loadingGroups ? (
+                  <Text style={styles.emptyText}>{groupsEmptyText}</Text>
+                ) : null
+              }
             />
           )}
         </Animated.View>
 
-        <Animated.View style={[styles.handleWrap, ready && animatedHandleStyle]}>
+        <Animated.View
+          style={[styles.handleWrap, ready && animatedHandleStyle]}
+        >
           <GestureDetector gesture={pan}>
             <View style={styles.dragHandleArea}>
               <View style={styles.dragHandle} />
@@ -566,7 +726,11 @@ export default function HomeScreen() {
         </Animated.View>
       </View>
 
-      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)} activeOpacity={0.85}>
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => setModalVisible(true)}
+        activeOpacity={0.85}
+      >
         <Text style={styles.fabPlus}>+</Text>
       </TouchableOpacity>
 
@@ -597,26 +761,31 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingTop: 60 },
   headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginHorizontal: 20,
     marginBottom: 4,
   },
-  headerActions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
-  createText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
-  draftsText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  headerActions: { flexDirection: "row", gap: 16, alignItems: "center" },
+  createText: { color: colors.primary, fontSize: 14, fontWeight: "700" },
+  draftsText: { color: colors.textSecondary, fontSize: 14, fontWeight: "600" },
   draftsTextActive: { color: colors.primary },
-  groupsText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
-  contentArea: { flex: 1, position: 'relative', overflow: 'hidden' },
+  groupsText: { color: colors.primary, fontSize: 14, fontWeight: "600" },
+  contentArea: { flex: 1, position: "relative", overflow: "hidden" },
   calendarWrapper: {},
   calendar: { borderBottomWidth: 1, borderBottomColor: colors.divider },
-  calendarArrow: { color: colors.primary, fontSize: 28, fontWeight: '700', paddingHorizontal: 8 },
+  calendarArrow: {
+    color: colors.primary,
+    fontSize: 28,
+    fontWeight: "700",
+    paddingHorizontal: 8,
+  },
   // Cards sheet: rises to cover the calendar as you drag up; pinned right
   // under it at rest. Reserves handleSpacer at the top so its content
   // doesn't render under the independently-floating handle.
   cardsSheet: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     right: 0,
     top: MIN_TOP_INSET,
@@ -629,46 +798,65 @@ const styles = StyleSheet.create({
   // Rows block: top fixed flush against the calendar, height grows downward
   // as the handle is dragged toward the + button.
   rowsBlock: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     right: 0,
     backgroundColor: colors.background,
     borderTopWidth: 1,
     borderTopColor: colors.divider,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   // The floating handle: one persistent element positioned independently of
   // both content blocks (both always mounted), so the gesture stays bound
   // to the same view throughout the whole drag.
-  handleWrap: { position: 'absolute', left: 0, right: 0, top: 0 },
-  dragHandleArea: { height: HANDLE_HEIGHT, alignItems: 'center', justifyContent: 'center' },
-  dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  handleWrap: { position: "absolute", left: 0, right: 0, top: 0 },
+  dragHandleArea: {
+    height: HANDLE_HEIGHT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+  },
   listHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginHorizontal: 20,
     marginTop: 4,
   },
-  listHeaderActions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
-  pageTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '700' },
-  clearFilterText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
-  emptyText: { color: colors.textMuted, textAlign: 'center', marginTop: 40, fontSize: 15 },
+  listHeaderActions: { flexDirection: "row", gap: 16, alignItems: "center" },
+  pageTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: "700" },
+  clearFilterText: { color: colors.primary, fontSize: 14, fontWeight: "600" },
+  emptyText: {
+    color: colors.textMuted,
+    textAlign: "center",
+    marginTop: 40,
+    fontSize: 15,
+  },
   fab: {
-    position: 'absolute',
+    position: "absolute",
     right: 24,
     bottom: 40,
     width: 64,
     height: 64,
     borderRadius: 32,
     backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     shadowColor: colors.textPrimary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 6,
     elevation: 6,
   },
-  fabPlus: { color: colors.textOnPrimary, fontSize: 34, fontWeight: '400', marginTop: -2 },
+  fabPlus: {
+    color: colors.textOnPrimary,
+    fontSize: 34,
+    fontWeight: "400",
+    marginTop: -2,
+  },
 });

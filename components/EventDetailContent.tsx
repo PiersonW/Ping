@@ -71,9 +71,10 @@ type Props = {
   eventId: string;
   onClose: () => void;
   variant?: 'modal' | 'page';
+  onOpenMessages?: () => void;
 };
 
-export default function EventDetailContent({ eventId, onClose, variant = 'modal' }: Props) {
+export default function EventDetailContent({ eventId, onClose, variant = 'modal', onOpenMessages }: Props) {
   const { session } = useAuth();
 
   const [event, setEvent] = useState<EventDetail | null>(null);
@@ -358,20 +359,16 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
           </View>
         )}
 
-        <LinearGradient
-          colors={cardFrameGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.imageFrame}
-        >
-          {event.image_url ? (
+        {!!event.image_url && (
+          <LinearGradient
+            colors={cardFrameGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.imageFrame}
+          >
             <Image source={{ uri: event.image_url }} style={styles.image} resizeMode="cover" />
-          ) : (
-            <View style={[styles.image, styles.imagePlaceholder]}>
-              <Text style={styles.imagePlaceholderIcon}>🎉</Text>
-            </View>
-          )}
-        </LinearGradient>
+          </LinearGradient>
+        )}
 
         <Text style={styles.title}>{event.title}</Text>
         <Text style={styles.meta}>{dateLabel}</Text>
@@ -601,6 +598,12 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
       </ScrollView>
       </KeyboardAvoidingView>
 
+      {onOpenMessages && (
+        <TouchableOpacity style={styles.messageBubble} onPress={onOpenMessages} activeOpacity={0.8}>
+          <Text style={styles.messageBubbleIcon}>💬</Text>
+        </TouchableOpacity>
+      )}
+
       <ShareInviteModal
         visible={shareModalVisible}
         eventId={event.id}
@@ -645,6 +648,23 @@ const styles = StyleSheet.create({
   containerModal: { flex: 1, paddingHorizontal: 4, marginBottom: 84 },
   containerPage: { flex: 1, backgroundColor: colors.background, padding: 20, paddingTop: 60 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  messageBubble: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.textPrimary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  messageBubbleIcon: { fontSize: 22 },
   backButton: {},
   backText: { color: colors.primary, fontSize: 16, fontWeight: '600' },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
@@ -653,8 +673,6 @@ const styles = StyleSheet.create({
   draftBannerText: { color: colors.textSecondary, fontSize: 13 },
   imageFrame: { borderRadius: 18, padding: 3, marginBottom: 14 },
   image: { width: '100%', height: 180, borderRadius: 15 },
-  imagePlaceholder: { backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
-  imagePlaceholderIcon: { fontSize: 44 },
   title: { color: colors.textPrimary, fontSize: 26, fontWeight: '700', marginBottom: 8 },
   meta: { color: colors.textSecondary, fontSize: 15, marginBottom: 2 },
   visibilityRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 12 },
