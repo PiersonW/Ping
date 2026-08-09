@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabase';
 import { displayName } from './displayName';
 
@@ -59,6 +59,46 @@ export function useLatestMessages(sessionUserId?: string | null) {
     (eventIds: string[]) => fetchLatestFor(eventIds, true),
     [fetchLatestFor]
   );
+
+  // Without this, a message someone else sends while you're just looking
+  // at the Message Board never updates its cached snippet/timestamp here -
+  // the lazy per-id fetch above only ever runs once (or on an explicit
+  // refresh()), so the "most recent activity" sort on the Home screen would
+  // silently go stale the moment anyone but you posted anywhere. RLS on
+  // `messages` already scopes which INSERTs this subscription actually
+  // receives, so no extra filter is needed here.
+  useEffect(() => {
+    const channel = supabase
+      .channel('latest-messages-global')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          const row = payload.new as any;
+          const apply = (senderName: string) => {
+            setLatestByEvent((prev) => ({
+              ...prev,
+              [row.event_id]: { senderName, body: row.body, createdAt: row.created_at },
+            }));
+          };
+          if (row.sender_id === sessionUserId) {
+            apply('You');
+            return;
+          }
+          supabase
+            .from('profiles')
+            .select('full_name, email')
+            .eq('id', row.sender_id)
+            .maybeSingle()
+            .then(({ data }) => apply(displayName(data, 'Someone')));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionUserId]);
 
   return { latestByEvent, fetchLatestFor, refresh };
 }

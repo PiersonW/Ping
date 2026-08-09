@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabase';
 import { displayName } from './displayName';
 
@@ -58,6 +58,44 @@ export function useLatestGroupMessages(sessionUserId?: string | null) {
     (groupIds: string[]) => fetchLatestFor(groupIds, true),
     [fetchLatestFor]
   );
+
+  // Same reasoning as useLatestMessages.ts: without this, a group message
+  // from someone else while you're just looking at the Message Board never
+  // updates its cached snippet/timestamp, so the "most recent activity"
+  // sort would silently go stale. RLS on group_messages already scopes
+  // which INSERTs this subscription actually receives.
+  useEffect(() => {
+    const channel = supabase
+      .channel('latest-group-messages-global')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'group_messages' },
+        (payload) => {
+          const row = payload.new as any;
+          const apply = (senderName: string) => {
+            setLatestByGroup((prev) => ({
+              ...prev,
+              [row.group_id]: { senderName, body: row.body, createdAt: row.created_at },
+            }));
+          };
+          if (row.sender_id === sessionUserId) {
+            apply('You');
+            return;
+          }
+          supabase
+            .from('profiles')
+            .select('full_name, email')
+            .eq('id', row.sender_id)
+            .maybeSingle()
+            .then(({ data }) => apply(displayName(data, 'Someone')));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionUserId]);
 
   return { latestByGroup, fetchLatestFor, refresh };
 }

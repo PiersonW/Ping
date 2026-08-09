@@ -183,7 +183,11 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       const ranked = Array.from(counts.entries())
         .sort((a, b) => b[1] - a[1])
         .map(([id]) => id);
-      setFavoriteContactIds(ranked.slice(0, 6));
+      // Fill out to 6 with whoever else exists (contactIds is already
+      // alpha-sorted) so the Favorites/See-all split is visible right away
+      // even before any ping history has built up, instead of silently
+      // falling back to "show everyone" with no visible feature at all.
+      setFavoriteContactIds(Array.from(new Set([...ranked, ...contactIds])).slice(0, 6));
     } else {
       setFavoriteContactIds([]);
     }
