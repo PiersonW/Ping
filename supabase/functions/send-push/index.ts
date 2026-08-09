@@ -16,25 +16,41 @@ serve(async (req) => {
 
     const { data: profiles, error } = await supabase
       .from('profiles')
-      .select('push_token')
+      .select('id, push_token')
       .in('id', user_ids)
       .not('push_token', 'is', null);
 
     if (error) throw error;
 
-    const tokens = (profiles || []).map((p) => p.push_token).filter(Boolean);
-    if (tokens.length === 0) {
+    if (!profiles || profiles.length === 0) {
       return new Response(JSON.stringify({ sent: 0, reason: 'no push tokens for these users' }), {
         status: 200,
       });
     }
 
-    const messages = tokens.map((token) => ({
-      to: token,
+    // The app icon's badge number - each recipient gets their own actual
+    // unread count, not a flat "1" per push. lib/notify.ts awaits the
+    // notifications-table write before invoking this function, so the row
+    // this push is for is already committed and counted here.
+    const { data: unreadRows, error: unreadError } = await supabase
+      .from('notifications')
+      .select('recipient_id')
+      .in('recipient_id', user_ids)
+      .is('read_at', null);
+    if (unreadError) console.error('Error counting unread notifications:', unreadError);
+
+    const unreadCounts = new Map<string, number>();
+    (unreadRows || []).forEach((r) => {
+      unreadCounts.set(r.recipient_id, (unreadCounts.get(r.recipient_id) || 0) + 1);
+    });
+
+    const messages = profiles.map((p) => ({
+      to: p.push_token,
       title,
       body,
       data: data || {},
       sound: 'default',
+      badge: unreadCounts.get(p.id) || 0,
       // Lets invite pushes show Accept/Interested/Decline as native
       // quick-actions - see the matching category registered in
       // lib/pushNotifications.ts.
@@ -53,7 +69,7 @@ serve(async (req) => {
 
     const result = await pushResponse.json();
 
-    return new Response(JSON.stringify({ sent: tokens.length, result }), {
+    return new Response(JSON.stringify({ sent: profiles.length, result }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });

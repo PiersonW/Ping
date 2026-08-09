@@ -19,7 +19,7 @@ type NotifyOptions = {
   silent?: boolean;
 };
 
-export function notify(
+export async function notify(
   userIds: (string | null | undefined)[],
   title: string,
   body: string,
@@ -39,30 +39,27 @@ export function notify(
     const type = opts.type;
     const eventId = opts.eventId ?? null;
     const groupId = opts.groupId ?? null;
-    ids.forEach((id) => {
-      consolidateNotification(id, type, eventId, groupId, title, body);
-    });
+    await Promise.all(ids.map((id) => consolidateNotification(id, type, eventId, groupId, title, body)));
   } else if (opts?.type) {
-    supabase
-      .from('notifications')
-      .insert(
-        ids.map((id) => ({
-          recipient_id: id,
-          type: opts.type,
-          event_id: opts.eventId ?? null,
-          group_id: opts.groupId ?? null,
-          title,
-          body,
-        }))
-      )
-      .then(({ error }) => {
-        if (error) console.error('Error saving notification:', error);
-      });
+    const { error } = await supabase.from('notifications').insert(
+      ids.map((id) => ({
+        recipient_id: id,
+        type: opts.type,
+        event_id: opts.eventId ?? null,
+        group_id: opts.groupId ?? null,
+        title,
+        body,
+      }))
+    );
+    if (error) console.error('Error saving notification:', error);
   }
 
   if (opts?.silent) return;
 
-  supabase.functions
+  // Awaited so the row above is committed before send-push queries each
+  // recipient's unread count for the push's badge number - otherwise the
+  // badge could undercount by whatever this call just wrote.
+  await supabase.functions
     .invoke('send-push', {
       body: { user_ids: ids, title, body, data: { eventId: opts?.eventId, groupId: opts?.groupId, type: opts?.type } },
     })

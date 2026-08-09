@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import * as Notifications from 'expo-notifications';
 import { supabase } from '../supabase';
 import { NotificationType } from './notify';
 
@@ -145,6 +146,17 @@ export function useNotifications(userId?: string | null) {
   }, [notifications]);
 
   const unreadCount = notifications.filter((n) => !n.read_at).length + pendingInvites.length;
+
+  // Pushes carry their own badge number (see supabase/functions/send-push),
+  // but that only ever grows a stale number until the next push - reading
+  // notifications in-app (or the pending-invite list shrinking) needs to
+  // clear it here too, not just wait for the next message to correct it.
+  useEffect(() => {
+    if (!userId) return;
+    Notifications.setBadgeCountAsync(unreadCount).catch((err) =>
+      console.error('Error setting badge count:', err)
+    );
+  }, [userId, unreadCount]);
 
   return { notifications, pendingInvites, unreadCount, loading, refresh: fetchAll, markRead, markAllRead };
 }
