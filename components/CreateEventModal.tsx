@@ -78,6 +78,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
 
   const dragY = useRef(new Animated.Value(0)).current;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
     if (visible) {
@@ -89,8 +90,14 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
@@ -697,6 +704,19 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
             </View>
           )}
 
+          {/* The Save/Send footer above is hidden while the keyboard covers
+              it (there's no room for both) - this floats right above the
+              keyboard as the one way back to it, since nothing else on this
+              densely-packed form reliably dismisses the keyboard on tap. */}
+          {keyboardVisible && (
+            <TouchableOpacity
+              style={[styles.keyboardDoneBar, { bottom: keyboardHeight }]}
+              onPress={() => Keyboard.dismiss()}
+            >
+              <Text style={styles.keyboardDoneText}>Done</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={styles.closeArea}
             onPress={onClose}
@@ -784,6 +804,17 @@ const styles = StyleSheet.create({
   customToggleText: { color: colors.textSecondary, fontSize: 13, flex: 1 },
   footer: { flexDirection: 'row', gap: 12, marginTop: 12 },
   footerButton: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  keyboardDoneBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingVertical: 10,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  keyboardDoneText: { color: colors.primary, fontWeight: '700', fontSize: 15 },
   saveButton: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   saveButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 15 },
   sendButton: { backgroundColor: colors.primary },

@@ -475,11 +475,14 @@ export default function HomeScreen() {
   });
 
   // The handle itself: a single, always-mounted element so the active
-  // gesture never gets orphaned by a conditional remount mid-drag. It always
-  // tracks the actual boundary line between the calendar and whichever
-  // sheet is showing — the cards sheet's top for dragY<=0, the rows block's
-  // top for dragY>=0 (which only starts moving once dragY passes
-  // originalRoom, matching animatedRowsBlockStyle above).
+  // gesture never gets orphaned by a conditional remount mid-drag. It must
+  // track the actual drag distance 1:1 so it always moves with your finger
+  // — the cards sheet's top for dragY<=0 (which happens to also be a 1:1
+  // mapping), and calBottom + dragY for dragY>=0. (An earlier version tried
+  // tracking the rows block's top edge instead, which stays pinned in place
+  // for the whole normal-screen drag range — the handle would freeze right
+  // on top of the Events/Groups row instead of moving, blocking those
+  // buttons and making the drag feel broken.)
   const animatedHandleStyle = useAnimatedStyle(() => {
     const calBottom = calFullHeight ?? MIN_TOP_INSET;
     if (dragY.value <= 0) {
@@ -496,11 +499,7 @@ export default function HomeScreen() {
         ],
       };
     }
-    const covered =
-      extraCoverable > 0
-        ? interpolate(dragY.value, [originalRoom, bottomLimit], [0, extraCoverable], Extrapolation.CLAMP)
-        : 0;
-    return { transform: [{ translateY: calBottom - covered }] };
+    return { transform: [{ translateY: calBottom + dragY.value }] };
   });
 
   const renderListHeader = (defaultTitle: string, showDraftsToggle = false) => (

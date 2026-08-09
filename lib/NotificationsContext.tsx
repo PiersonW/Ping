@@ -1,7 +1,38 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as Notifications from 'expo-notifications';
+import { supabase } from '../supabase';
 import { useAuth } from './AuthContext';
 import { useNotifications } from './useNotifications';
+import { submitRsvp, RsvpStatus } from './rsvp';
+import { displayName } from './displayName';
+
+const QUICK_RSVP_ACTIONS: Record<string, Exclude<RsvpStatus, 'pending'>> = {
+  accept: 'accepted',
+  interested: 'interested',
+  decline: 'declined',
+};
+
+// Fired when someone RSVPs straight from the notification's Accept/
+// Interested/Decline quick-actions instead of opening the InvitePopup -
+// looks up the same data the popup would have already had loaded.
+async function submitQuickRsvp(eventId: string, userId: string, status: Exclude<RsvpStatus, 'pending'>) {
+  const [{ data: eventRow }, { data: inviteeRow }, { data: profile }] = await Promise.all([
+    supabase.from('events').select('title, host_id').eq('id', eventId).maybeSingle(),
+    supabase.from('invitees').select('id').eq('event_id', eventId).eq('user_id', userId).maybeSingle(),
+    supabase.from('profiles').select('full_name, email').eq('id', userId).maybeSingle(),
+  ]);
+  if (!eventRow) return;
+
+  await submitRsvp({
+    eventId,
+    hostId: eventRow.host_id,
+    eventTitle: eventRow.title,
+    userId,
+    myInviteeId: inviteeRow?.id || null,
+    responderName: displayName(profile),
+    status,
+  });
+}
 
 type NotificationsContextType = ReturnType<typeof useNotifications> & {
   popupEventId: string | null;
@@ -51,14 +82,21 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       if (isInviteNotificationData(data)) openInvitePopup(data.eventId);
     });
 
-    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+    const handleResponse = (response: Notifications.NotificationResponse) => {
       const data = response.notification.request.content.data;
-      if (isInviteNotificationData(data)) openInvitePopup(data.eventId);
-    });
+      if (!isInviteNotificationData(data)) return;
 
+      const quickStatus = QUICK_RSVP_ACTIONS[response.actionIdentifier];
+      if (quickStatus) {
+        submitQuickRsvp(data.eventId, session.user.id, quickStatus);
+        return;
+      }
+      openInvitePopup(data.eventId);
+    };
+
+    const responseSub = Notifications.addNotificationResponseReceivedListener(handleResponse);
     Notifications.getLastNotificationResponseAsync().then((response) => {
-      const data = response?.notification.request.content.data;
-      if (isInviteNotificationData(data)) openInvitePopup(data.eventId);
+      if (response) handleResponse(response);
     });
 
     return () => {

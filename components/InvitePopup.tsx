@@ -23,10 +23,10 @@ type PopupEvent = {
 
 type RsvpChoice = 'accepted' | 'interested' | 'declined';
 
-const RSVP_OPTIONS: { label: string; value: RsvpChoice }[] = [
-  { label: 'Accept', value: 'accepted' },
-  { label: 'Interested', value: 'interested' },
-  { label: 'Decline', value: 'declined' },
+const RSVP_OPTIONS: { label: string; value: RsvpChoice; color: string }[] = [
+  { label: 'Accept', value: 'accepted', color: colors.success },
+  { label: 'Interested', value: 'interested', color: colors.warning },
+  { label: 'Decline', value: 'declined', color: colors.danger },
 ];
 
 type Props = {
@@ -187,11 +187,21 @@ export default function InvitePopup({ eventId, onClose, onOpenFull }: Props) {
                 {RSVP_OPTIONS.map((opt) => (
                   <TouchableOpacity
                     key={opt.value}
-                    style={[styles.rsvpButton, selected === opt.value && styles.rsvpButtonSelected]}
+                    style={[
+                      styles.rsvpButton,
+                      { borderColor: opt.color },
+                      selected === opt.value && { backgroundColor: opt.color },
+                    ]}
                     onPress={() => handleRespond(opt.value)}
                     disabled={responding}
                   >
-                    <Text style={[styles.rsvpButtonText, selected === opt.value && styles.rsvpButtonTextSelected]}>
+                    <Text
+                      style={[
+                        styles.rsvpButtonText,
+                        { color: opt.color },
+                        selected === opt.value && styles.rsvpButtonTextSelected,
+                      ]}
+                    >
                       {opt.label}
                     </Text>
                   </TouchableOpacity>
@@ -243,8 +253,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: 'center',
   },
-  rsvpButtonSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  rsvpButtonText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  rsvpButtonText: { fontSize: 14, fontWeight: '700' },
   rsvpButtonTextSelected: { color: colors.textOnPrimary },
   viewFullLink: { marginTop: 16, fontSize: 13, color: colors.primaryDark, textAlign: 'center' },
 });

@@ -90,6 +90,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
 
   const dragY = useRef(new Animated.Value(0)).current;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
     if (visible) dragY.setValue(0);
@@ -98,8 +99,14 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
@@ -312,7 +319,36 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
     return deduped;
   };
 
-  const handleSave = async (sendNow: boolean) => {
+  // Guests who already have this event (invited, and especially ones who've
+  // already told the host they're coming) never heard about it if the host
+  // changed the date/location/title afterward — this asks the host whether
+  // to let them know before saving, rather than always doing one or the
+  // other silently.
+  const confirmAndSave = (sendNow: boolean) => {
+    if (!event) return;
+    const changedDetails =
+      !isDraft &&
+      (title !== event.title ||
+        location !== (event.location || '') ||
+        eventDate.toISOString() !== event.event_date);
+
+    if (!changedDetails) {
+      handleSave(sendNow, false);
+      return;
+    }
+
+    Alert.alert(
+      'Notify guests?',
+      "You've changed this event's details. Let the people you've invited know?",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Save silently', onPress: () => handleSave(sendNow, false) },
+        { text: 'Save & notify', onPress: () => handleSave(sendNow, true) },
+      ]
+    );
+  };
+
+  const handleSave = async (sendNow: boolean, notifyExisting: boolean) => {
     if (!event || !session?.user?.id) return;
     if (!title) {
       Alert.alert('Missing info', 'Please add at least a title.');
@@ -352,6 +388,22 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       console.error('Error updating event:', error);
       Alert.alert('Error', 'Something went wrong saving your changes.');
       return;
+    }
+
+    if (notifyExisting) {
+      const { data: allInvitees } = await supabase
+        .from('invitees')
+        .select('user_id')
+        .eq('event_id', event.id);
+      const recipientIds = (allInvitees || [])
+        .map((i) => i.user_id)
+        .filter((id): id is string => !!id && id !== session.user.id);
+      if (recipientIds.length > 0) {
+        notify(recipientIds, `${title} was updated`, "The host changed this event's details — take a look.", {
+          eventId: event.id,
+          type: 'event_updated',
+        });
+      }
     }
 
     // Newly selected people get invited whether this is the draft's first
@@ -701,17 +753,17 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
             <View style={styles.footer}>
               {isDraft ? (
                 <>
-                  <TouchableOpacity style={[styles.footerButton, styles.saveButton]} onPress={() => handleSave(false)} disabled={submitting}>
+                  <TouchableOpacity style={[styles.footerButton, styles.saveButton]} onPress={() => confirmAndSave(false)} disabled={submitting}>
                     <Text style={styles.saveButtonText}>Save Draft</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.footerButton, styles.sendButton]} onPress={() => handleSave(true)} disabled={submitting}>
+                  <TouchableOpacity style={[styles.footerButton, styles.sendButton]} onPress={() => confirmAndSave(true)} disabled={submitting}>
                     <Text style={styles.sendButtonText}>
                       {uploadingImage ? 'Uploading...' : submitting ? 'Sending...' : 'Send'}
                     </Text>
                   </TouchableOpacity>
                 </>
               ) : (
-                <TouchableOpacity style={[styles.footerButton, styles.sendButton, { flex: 1 }]} onPress={() => handleSave(false)} disabled={submitting}>
+                <TouchableOpacity style={[styles.footerButton, styles.sendButton, { flex: 1 }]} onPress={() => confirmAndSave(false)} disabled={submitting}>
                   <Text style={styles.sendButtonText}>
                     {uploadingImage
                       ? 'Uploading...'
@@ -724,6 +776,18 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
                 </TouchableOpacity>
               )}
             </View>
+          )}
+
+          {/* Same reasoning as CreateEventModal.tsx: the footer above is
+              hidden while the keyboard covers it, so this is the one
+              reliable way back to it on this densely-packed form. */}
+          {keyboardVisible && (
+            <TouchableOpacity
+              style={[styles.keyboardDoneBar, { bottom: keyboardHeight }]}
+              onPress={() => Keyboard.dismiss()}
+            >
+              <Text style={styles.keyboardDoneText}>Done</Text>
+            </TouchableOpacity>
           )}
 
           <TouchableOpacity style={styles.closeArea} onPress={onClose} disabled={showPicker || keyboardVisible}>
@@ -806,6 +870,17 @@ const styles = StyleSheet.create({
   addContactButtonText: { color: colors.textOnPrimary, fontWeight: '600' },
   footer: { flexDirection: 'row', gap: 12, marginTop: 12 },
   footerButton: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  keyboardDoneBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingVertical: 10,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  keyboardDoneText: { color: colors.primary, fontWeight: '700', fontSize: 15 },
   saveButton: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   saveButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 15 },
   sendButton: { backgroundColor: colors.primary },

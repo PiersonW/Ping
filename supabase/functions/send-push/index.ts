@@ -35,6 +35,10 @@ serve(async (req) => {
       body,
       data: data || {},
       sound: 'default',
+      // Lets invite pushes show Accept/Interested/Decline as native
+      // quick-actions - see the matching category registered in
+      // lib/pushNotifications.ts.
+      ...(data?.type === 'invite' ? { categoryId: 'invite' } : {}),
     }));
 
     const pushResponse = await fetch('https://exp.host/--/api/v2/push/send', {

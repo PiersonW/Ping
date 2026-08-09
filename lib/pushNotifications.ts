@@ -5,8 +5,12 @@ import { Platform } from 'react-native';
 import { supabase } from '../supabase';
 
 Notifications.setNotificationHandler({
-  // Invite notifications are handled by the in-app InvitePopup instead —
-  // showing the native banner too while foregrounded would be redundant.
+  // This handler only ever runs while the app's JS is alive and
+  // foregrounded - it has no effect on whether the OS shows a banner while
+  // backgrounded or killed (that's driven entirely by the push payload's
+  // title/body, which send-push always includes). So suppressing the
+  // banner here for invites is safe: the in-app InvitePopup only replaces
+  // it in the one case (foreground) this handler actually controls.
   handleNotification: async (notification) => {
     const isInvite = notification.request.content.data?.type === 'invite';
     return {
@@ -18,6 +22,19 @@ Notifications.setNotificationHandler({
     };
   },
 });
+
+// Lets an invite notification carry Accept/Interested/Decline as native
+// quick-action buttons (long-press or expand the notification), so RSVPing
+// doesn't require fully opening and navigating the app first. iOS requires
+// opensAppToForeground so these still work when the app was fully killed,
+// not just backgrounded (see expo-notifications' own docs on that option) -
+// so picking one does bring the app forward, it just lands the RSVP
+// immediately rather than needing the popup + button tap on top of that.
+Notifications.setNotificationCategoryAsync('invite', [
+  { identifier: 'accept', buttonTitle: 'Accept', options: { opensAppToForeground: true } },
+  { identifier: 'interested', buttonTitle: 'Interested', options: { opensAppToForeground: true } },
+  { identifier: 'decline', buttonTitle: 'Decline', options: { isDestructive: true, opensAppToForeground: true } },
+]).catch((err) => console.error('Error registering invite notification category:', err));
 
 export async function registerForPushNotifications(userId: string) {
   if (!Device.isDevice) {

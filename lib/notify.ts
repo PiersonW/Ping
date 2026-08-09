@@ -3,6 +3,7 @@ import { supabase } from '../supabase';
 export type NotificationType =
   | 'invite'
   | 'event_canceled'
+  | 'event_updated'
   | 'message'
   | 'group_message'
   | 'rsvp_update'
@@ -24,16 +25,18 @@ export function notify(
   const ids = Array.from(new Set(userIds.filter(Boolean))) as string[];
   if (ids.length === 0) return;
 
-  if (opts?.type === 'message' || opts?.type === 'group_message') {
-    // Chat messages arrive in bursts - collapse repeats into a single
+  const CONSOLIDATED_TYPES: NotificationType[] = ['message', 'group_message', 'rsvp_update', 'event_updated'];
+  if (opts?.type && CONSOLIDATED_TYPES.includes(opts.type)) {
+    // Chat messages arrive in bursts, and someone can flip their RSVP
+    // several times before the event - collapse repeats into a single
     // unread row per recipient/event (or group) instead of piling up one
-    // notification per message, same as how a phone shows one thread for
+    // notification per change, same as how a phone shows one thread for
     // several texts in a row rather than a line per text.
     const type = opts.type;
     const eventId = opts.eventId ?? null;
     const groupId = opts.groupId ?? null;
     ids.forEach((id) => {
-      consolidateMessageNotification(id, type, eventId, groupId, title, body);
+      consolidateNotification(id, type, eventId, groupId, title, body);
     });
   } else if (opts?.type) {
     supabase
@@ -60,7 +63,7 @@ export function notify(
     .catch((err) => console.error('Push notification failed:', err));
 }
 
-async function consolidateMessageNotification(
+async function consolidateNotification(
   recipientId: string,
   type: NotificationType,
   eventId: string | null,
