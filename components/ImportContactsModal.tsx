@@ -10,6 +10,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import * as Contacts from 'expo-contacts';
 import { supabase } from '../supabase';
@@ -36,6 +37,7 @@ export default function ImportContactsModal({ visible, onClose, onImported }: Pr
   const { session } = useAuth();
   const [loading, setLoading] = useState(true);
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [limitedAccess, setLimitedAccess] = useState(false);
   const [deviceContacts, setDeviceContacts] = useState<DeviceContact[]>([]);
   const [search, setSearch] = useState('');
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -52,12 +54,19 @@ export default function ImportContactsModal({ visible, onClose, onImported }: Pr
   const loadDeviceContacts = async () => {
     setLoading(true);
     setPermissionDenied(false);
+    setLimitedAccess(false);
 
-    const { status } = await Contacts.requestPermissionsAsync();
-    if (status !== 'granted') {
+    const permission = await Contacts.requestPermissionsAsync();
+    if (permission.status !== 'granted') {
       setPermissionDenied(true);
       setLoading(false);
       return;
+    }
+    // iOS 18+ "Select Contacts..." grants access to only a hand-picked
+    // subset - once chosen, the OS never shows the permission prompt again,
+    // so the only way to add more later is through the Settings app.
+    if (permission.accessPrivileges === 'limited') {
+      setLimitedAccess(true);
     }
 
     const { data } = await Contacts.getContactsAsync({
@@ -65,10 +74,14 @@ export default function ImportContactsModal({ visible, onClose, onImported }: Pr
       sort: Contacts.SortTypes.FirstName,
     });
 
+    // expo-contacts can hand back duplicate or missing `id`s for a handful
+    // of contacts under iOS's limited-access mode - fold the array index
+    // into the key so two contacts can never collide and silently fight
+    // over the same selection/checkbox state.
     const mapped: DeviceContact[] = data
       .filter((c) => c.name)
-      .map((c) => ({
-        key: c.id || `${c.name}-${Math.random()}`,
+      .map((c, idx) => ({
+        key: c.id ? `${c.id}-${idx}` : `contact-${idx}-${c.name}`,
         name: c.name!,
         phone: c.phoneNumbers?.[0]?.number || null,
       }));
@@ -125,6 +138,17 @@ export default function ImportContactsModal({ visible, onClose, onImported }: Pr
             </View>
           ) : (
             <>
+              {limitedAccess && (
+                <View style={styles.limitedBanner}>
+                  <Text style={styles.limitedBannerText}>
+                    Only a few contacts are shared with Ping. To pick from your full list, open Settings
+                    and choose Contacts → Full Access (or add more people to the shared list).
+                  </Text>
+                  <TouchableOpacity onPress={() => Linking.openSettings()}>
+                    <Text style={styles.limitedBannerLink}>Open Settings</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search contacts"
@@ -183,6 +207,14 @@ const styles = StyleSheet.create({
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 },
   header: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: 12 },
   helperText: { color: colors.textMuted, fontSize: 14, lineHeight: 20 },
+  limitedBanner: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+  },
+  limitedBannerText: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, marginBottom: 6 },
+  limitedBannerLink: { color: colors.primary, fontSize: 13, fontWeight: '700' },
   searchInput: {
     borderWidth: 1,
     borderColor: colors.border,

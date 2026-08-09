@@ -45,7 +45,10 @@ export default function PingLogoMenu({ hasNotifications = false, onCreatePing, o
   return (
     <>
       <TouchableOpacity ref={buttonRef} onPress={openMenu} activeOpacity={0.8}>
-        <Image source={hasNotifications ? logoRed : logoBlue} style={styles.logo} resizeMode="contain" />
+        <View style={styles.logoWrap}>
+          <Image source={hasNotifications ? logoRed : logoBlue} style={styles.logo} resizeMode="contain" />
+          {hasNotifications && <View style={styles.notificationDot} />}
+        </View>
       </TouchableOpacity>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -74,6 +77,21 @@ const styles = StyleSheet.create({
   // Fixed to the blue mark's natural aspect ratio (355x214) so swapping to
   // the red notification variant doesn't nudge the header layout.
   logo: { height: 30, aspectRatio: 355 / 214 },
+  logoWrap: { position: 'relative' },
+  // A second, more obvious notification cue than the red/blue logo swap
+  // alone — sized a bit bigger than the small signal-dot already in the
+  // wordmark art itself, so it doesn't get mistaken for part of the logo.
+  notificationDot: {
+    position: 'absolute',
+    bottom: -2,
+    left: -2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.danger,
+    borderWidth: 1.5,
+    borderColor: colors.background,
+  },
   backdrop: { flex: 1 },
   menu: {
     position: 'absolute',

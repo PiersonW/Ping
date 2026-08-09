@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -20,9 +20,37 @@ type Props = { onDone: () => void };
 export default function PhoneGateScreen({ onDone }: Props) {
   const { session, signOut } = useAuth();
   const [phone, setPhone] = useState('');
+  const [fullName, setFullName] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Google/Apple sign-in doesn't reliably leave a name on the profile (or a
+  // name at all, in Apple's case) - this screen is the one place every
+  // account is guaranteed to pass through, so it also doubles as the
+  // backstop for that. Pre-fill from whatever's already known so most
+  // people just confirm it rather than typing from scratch.
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', session.user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        const known =
+          data?.full_name ||
+          session.user.user_metadata?.full_name ||
+          session.user.user_metadata?.name ||
+          '';
+        if (known) setFullName(known);
+      });
+  }, [session?.user?.id]);
+
   const handleContinue = async () => {
+    const name = fullName.trim();
+    if (!name) {
+      Alert.alert('Name needed', 'Enter your name to continue.');
+      return;
+    }
     const normalized = normalizePhone(phone);
     if (!normalized || normalized.length < 10) {
       Alert.alert('Phone number needed', 'Enter a valid phone number to continue.');
@@ -52,7 +80,10 @@ export default function PhoneGateScreen({ onDone }: Props) {
       return;
     }
 
-    const { error } = await supabase.from('profiles').update({ phone: normalized }).eq('id', session.user.id);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ phone: normalized, full_name: name })
+      .eq('id', session.user.id);
 
     setSaving(false);
 
@@ -68,11 +99,22 @@ export default function PhoneGateScreen({ onDone }: Props) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.container}>
-        <Text style={styles.title}>What&apos;s your phone number?</Text>
+        <Text style={styles.title}>Just a couple things</Text>
         <Text style={styles.explainer}>
-          Ping matches invites to your account by phone number. Without it, people who invite you may
-          never actually reach you — even if you already have an account.
+          Ping matches invites to your account by phone number, and shows your name to people you're
+          pinging. Without these, people who invite you may never actually reach you — even if you
+          already have an account.
         </Text>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Your name"
+          placeholderTextColor={colors.textMuted}
+          autoCapitalize="words"
+          value={fullName}
+          onChangeText={setFullName}
+          autoFocus
+        />
 
         <TextInput
           style={styles.input}
@@ -81,7 +123,6 @@ export default function PhoneGateScreen({ onDone }: Props) {
           keyboardType="phone-pad"
           value={phone}
           onChangeText={setPhone}
-          autoFocus
         />
 
         <TouchableOpacity style={styles.button} onPress={handleContinue} disabled={saving}>

@@ -334,18 +334,25 @@ export default function HomeScreen() {
   // title, cards extended), 0 (default, handle under the calendar),
   // bottomLimit (handle parked near the + button, message rows extended).
   const topLimit = ready ? -(calFullHeight! - MIN_TOP_INSET) : 0;
-  // Room below the calendar before it needs to start covering anything —
-  // on a small screen this can be quite small, so once the drag exceeds it
-  // the rows block starts eating into the calendar's own space too (see
-  // extraCoverable / animatedRowsBlockStyle below), mirroring how the cards
-  // sheet already covers the calendar on the other side of 0.
+  // Room below the calendar before it needs to start covering anything. On
+  // a screen with plenty of natural room, this is already past the
+  // calendar's halfway point and nothing needs to cover anything — bottomLimit
+  // just equals originalRoom, identical to the original (already-proven)
+  // behavior. Only a cramped screen, where that natural room falls short of
+  // reaching halfway up the calendar, extends bottomLimit further and lets
+  // the rows block's top rise to cover the difference — and never past the
+  // calendar's own midpoint. (An earlier version of this let it cover the
+  // calendar all the way to the top on every screen size, which pushed the
+  // fully-open snap point so far down that dragging back to center became a
+  // fight — it always felt stuck pinned open.)
   const originalRoom = ready
     ? Math.max(0, totalHeight! - calFullHeight! - FAB_CLEARANCE)
     : 0;
-  const extraCoverable = ready
-    ? Math.max(0, calFullHeight! - MIN_TOP_INSET)
+  const roomNeededForHalfway = ready
+    ? Math.max(0, totalHeight! - calFullHeight! / 2 - FAB_CLEARANCE)
     : 0;
-  const bottomLimit = ready ? Math.max(80, originalRoom + extraCoverable) : 0;
+  const bottomLimit = ready ? Math.max(80, originalRoom, roomNeededForHalfway) : 0;
+  const extraCoverable = Math.max(0, bottomLimit - originalRoom);
 
   const handleContentLayout = (e: LayoutChangeEvent) => {
     if (totalMeasuredRef.current) return;
@@ -440,19 +447,16 @@ export default function HomeScreen() {
   }));
 
   // Rows block: top edge stays flush against the calendar while there's
-  // still room below it (dragY <= originalRoom); once the drag goes past
-  // that, the top itself starts rising to cover the calendar too (down to
-  // MIN_TOP_INSET, same floor the cards sheet uses), so a small screen with
-  // little natural room below the calendar can still open the board most of
-  // the way up the screen. Height always simply tracks dragY 1:1.
+  // still room below it (dragY <= originalRoom); only on a cramped screen
+  // does the drag go past that, at which point the top itself starts rising
+  // to cover the calendar too (never past its own midpoint — see
+  // roomNeededForHalfway above). Height always simply tracks dragY 1:1.
   const animatedRowsBlockStyle = useAnimatedStyle(() => {
     const calBottom = calFullHeight ?? 0;
-    const covered = interpolate(
-      dragY.value,
-      [originalRoom, bottomLimit],
-      [0, extraCoverable],
-      Extrapolation.CLAMP,
-    );
+    const covered =
+      extraCoverable > 0
+        ? interpolate(dragY.value, [originalRoom, bottomLimit], [0, extraCoverable], Extrapolation.CLAMP)
+        : 0;
     return {
       opacity: interpolate(
         dragY.value,
@@ -492,12 +496,10 @@ export default function HomeScreen() {
         ],
       };
     }
-    const covered = interpolate(
-      dragY.value,
-      [originalRoom, bottomLimit],
-      [0, extraCoverable],
-      Extrapolation.CLAMP,
-    );
+    const covered =
+      extraCoverable > 0
+        ? interpolate(dragY.value, [originalRoom, bottomLimit], [0, extraCoverable], Extrapolation.CLAMP)
+        : 0;
     return { transform: [{ translateY: calBottom - covered }] };
   });
 
