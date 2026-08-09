@@ -38,11 +38,18 @@ export default function GroupMessageThread({ groupId }: Props) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [draft, setDraft] = useState('');
+  const draftRef = useRef('');
+  const inputRef = useRef<TextInput>(null);
   const [sending, setSending] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [myMemberId, setMyMemberId] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const listRef = useRef<FlatList>(null);
+
+  const updateDraft = (text: string) => {
+    draftRef.current = text;
+    setDraft(text);
+  };
 
   // Owners don't have their own group_members row (see recipient logic in
   // handleSend below), so muting is only offered to actual members for now.
@@ -174,11 +181,16 @@ export default function GroupMessageThread({ groupId }: Props) {
   }, [groupId, fetchLatest, session?.user?.id]);
 
   const handleSend = async () => {
-    const body = draft.trim();
+    // Same autocorrect-commit issue as MessageThread.tsx - blur first so
+    // a highlighted suggestion is accepted before the text is read.
+    inputRef.current?.blur();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const body = draftRef.current.trim();
     if (!body || !session?.user?.id) return;
 
     setSending(true);
-    setDraft('');
+    updateDraft('');
 
     const { error } = await supabase
       .from('group_messages')
@@ -188,7 +200,7 @@ export default function GroupMessageThread({ groupId }: Props) {
 
     if (error) {
       console.error('Error sending group message:', error);
-      setDraft(body);
+      updateDraft(body);
       return;
     }
 
@@ -202,6 +214,8 @@ export default function GroupMessageThread({ groupId }: Props) {
       supabase.from('group_members').select('user_id, muted').eq('group_id', groupId).not('user_id', 'is', null),
     ]);
 
+    // Owners don't have a group_members row yet (see the mute effect
+    // above), so they always land in the normal bucket for now.
     const recipientIds = Array.from(
       new Set(
         [
@@ -210,16 +224,18 @@ export default function GroupMessageThread({ groupId }: Props) {
         ].filter(Boolean)
       )
     ).filter((id) => id !== session.user.id);
+    const mutedRecipientIds = (memberRows || [])
+      .filter((m: any) => m.muted)
+      .map((m: any) => m.user_id)
+      .filter((id: string) => id !== session.user.id);
 
     const senderDisplayName =
       session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Someone';
+    const notifTitle = groupRow?.name ? `New message — ${groupRow.name}` : 'New group message';
+    const notifBody = `${senderDisplayName}: ${body}`;
 
-    notify(
-      recipientIds,
-      groupRow?.name ? `New message — ${groupRow.name}` : 'New group message',
-      `${senderDisplayName}: ${body}`,
-      { groupId, type: 'group_message' }
-    );
+    notify(recipientIds, notifTitle, notifBody, { groupId, type: 'group_message' });
+    notify(mutedRecipientIds, notifTitle, notifBody, { groupId, type: 'group_message', silent: true });
   };
 
   return (
@@ -284,11 +300,12 @@ export default function GroupMessageThread({ groupId }: Props) {
         ]}
       >
         <TextInput
+          ref={inputRef}
           style={styles.input}
           placeholder="Message..."
           placeholderTextColor={colors.textMuted}
           value={draft}
-          onChangeText={setDraft}
+          onChangeText={updateDraft}
           multiline
         />
         <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={sending || !draft.trim()}>

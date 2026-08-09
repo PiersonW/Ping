@@ -104,7 +104,7 @@ export default function HomeScreen() {
     fetchLatestFor: fetchLatestGroupFor,
     refresh: refreshLatestGroupMessages,
   } = useLatestGroupMessages(session?.user?.id);
-  const { unreadCount, refresh: refreshNotifications } =
+  const { unreadCount, refresh: refreshNotifications, pendingEventModal, clearEventModal } =
     useNotificationsContext();
 
   useFocusEffect(
@@ -112,6 +112,18 @@ export default function HomeScreen() {
       refreshNotifications();
     }, [refreshNotifications]),
   );
+
+  // Notifications, the invite popup's "View full details", and any other
+  // in-app trigger all funnel through this instead of each pushing their
+  // own full-page route - keeps every entry point landing on the same
+  // flip-card modal.
+  useEffect(() => {
+    if (!pendingEventModal) return;
+    setSelectedEventId(pendingEventModal.eventId);
+    setOpenViaMessages(pendingEventModal.startOnMessages);
+    setDetailVisible(true);
+    clearEventModal();
+  }, [pendingEventModal, clearEventModal]);
 
   const fetchEvents = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -270,6 +282,33 @@ export default function HomeScreen() {
     }
     return result;
   }, [events, selectedDate, showDraftsOnly]);
+
+  // The Message Board (unlike the date-sorted Upcoming list above it) reads
+  // like a texting app's conversation list - most recently active thread
+  // first, not soonest-upcoming first. Events with no messages yet fall
+  // back to event date so they don't all clump at the bottom in an
+  // arbitrary order.
+  const messageBoardEvents = useMemo(() => {
+    return [...visibleEvents].sort((a, b) => {
+      const aTime = latestByEvent[a.id]?.createdAt;
+      const bTime = latestByEvent[b.id]?.createdAt;
+      if (aTime && bTime) return new Date(bTime).getTime() - new Date(aTime).getTime();
+      if (aTime) return -1;
+      if (bTime) return 1;
+      return new Date(a.event_date).getTime() - new Date(b.event_date).getTime();
+    });
+  }, [visibleEvents, latestByEvent]);
+
+  const messageBoardGroups = useMemo(() => {
+    return [...groups].sort((a, b) => {
+      const aTime = latestByGroup[a.id]?.createdAt;
+      const bTime = latestByGroup[b.id]?.createdAt;
+      if (aTime && bTime) return new Date(bTime).getTime() - new Date(aTime).getTime();
+      if (aTime) return -1;
+      if (bTime) return 1;
+      return 0;
+    });
+  }, [groups, latestByGroup]);
 
   const onDayPress = (day: { dateString: string }) => {
     setSelectedDate((prev) =>
@@ -547,19 +586,19 @@ export default function HomeScreen() {
   // Date-filter/"Show all" is events-only — groups aren't date-scoped.
   const renderRowsHeader = () => (
     <View style={styles.listHeaderRow}>
-      <Text style={styles.pageTitle}>
-        {boardView === "groups"
-          ? "Groups"
-          : showDraftsOnly
-            ? "Drafts"
-            : selectedDate
-              ? "On this day"
-              : "Message Board"}
-      </Text>
+      <TouchableOpacity onPress={closeMessages} style={styles.backToCalendarButton}>
+        <Text style={styles.pageTitle} numberOfLines={1}>
+          ‹{" "}
+          {boardView === "groups"
+            ? "Groups"
+            : showDraftsOnly
+              ? "Drafts"
+              : selectedDate
+                ? "On this day"
+                : "Message Board"}
+        </Text>
+      </TouchableOpacity>
       <View style={styles.listHeaderActions}>
-        <TouchableOpacity onPress={closeMessages}>
-          <Text style={styles.clearFilterText}>▲ Calendar</Text>
-        </TouchableOpacity>
         {boardView === "events" && selectedDate && (
           <TouchableOpacity onPress={() => setSelectedDate(null)}>
             <Text style={styles.clearFilterText}>Show all</Text>
@@ -677,7 +716,7 @@ export default function HomeScreen() {
           {boardView === "events" ? (
             <FlatList
               style={{ flex: 1 }}
-              data={visibleEvents}
+              data={messageBoardEvents}
               keyExtractor={(item) => item.id}
               extraData={latestByEvent}
               refreshControl={
@@ -703,7 +742,7 @@ export default function HomeScreen() {
           ) : (
             <FlatList
               style={{ flex: 1 }}
-              data={groups}
+              data={messageBoardGroups}
               keyExtractor={(item) => item.id}
               extraData={latestByGroup}
               refreshControl={
@@ -843,6 +882,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   listHeaderActions: { flexDirection: "row", gap: 16, alignItems: "center" },
+  // The title itself is the way back to the calendar now (tap it) - it used
+  // to share this row with a separate "▲ Calendar" button, which was too
+  // much for the Events/Groups toggle to fit alongside on a small screen.
+  backToCalendarButton: { flexShrink: 1, marginRight: 8 },
   pageTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: "700" },
   clearFilterText: { color: colors.primary, fontSize: 14, fontWeight: "600" },
   emptyText: {

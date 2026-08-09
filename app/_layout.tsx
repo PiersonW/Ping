@@ -12,7 +12,7 @@ import { colors } from '../lib/theme';
 
 function InvitePopupHost() {
   const router = useRouter();
-  const { popupEventId, closeInvitePopup } = useNotificationsContext();
+  const { popupEventId, closeInvitePopup, openEventModal } = useNotificationsContext();
 
   return (
     <InvitePopup
@@ -20,7 +20,8 @@ function InvitePopupHost() {
       onClose={closeInvitePopup}
       onOpenFull={(eventId) => {
         closeInvitePopup();
-        router.push(`/event/${eventId}`);
+        openEventModal(eventId);
+        router.push('/');
       }}
     />
   );

@@ -9,7 +9,8 @@ import NotificationRow from '../components/NotificationRow';
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { notifications, pendingInvites, loading, refresh, markRead, markAllRead } = useNotificationsContext();
+  const { notifications, pendingInvites, loading, refresh, markRead, markAllRead, openEventModal } =
+    useNotificationsContext();
 
   useFocusEffect(
     useCallback(() => {
@@ -17,14 +18,17 @@ export default function NotificationsScreen() {
     }, [refresh])
   );
 
+  // Events open in the same flip-card modal used everywhere else in the
+  // app (the Home screen watches pendingEventModal) rather than the
+  // separate full-page route - navigating home first so the modal has
+  // something to render on top of.
   const openNotification = (n: NotificationRowData) => {
     markRead(n.id);
-    if (n.type === 'message' && n.event_id) {
-      router.push(`/event/${n.event_id}?messages=1`);
-    } else if (n.group_id) {
+    if (n.group_id) {
       router.push(`/groups/${n.group_id}`);
     } else if (n.event_id) {
-      router.push(`/event/${n.event_id}`);
+      openEventModal(n.event_id, n.type === 'message');
+      router.push('/');
     }
   };
 
@@ -61,7 +65,10 @@ export default function NotificationsScreen() {
                   key={p.id}
                   event={p.events}
                   snippet={{ senderName: 'Invited', body: 'Tap to respond', createdAt: '' }}
-                  onPress={() => router.push(`/event/${p.event_id}`)}
+                  onPress={() => {
+                    openEventModal(p.event_id);
+                    router.push('/');
+                  }}
                 />
               ))}
             </View>

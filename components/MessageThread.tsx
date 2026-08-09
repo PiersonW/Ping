@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
+  PanResponder,
 } from 'react-native';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
@@ -39,11 +40,34 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [draft, setDraft] = useState('');
+  const draftRef = useRef('');
+  const inputRef = useRef<TextInput>(null);
+
+  const updateDraft = (text: string) => {
+    draftRef.current = text;
+    setDraft(text);
+  };
   const [sending, setSending] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [myInviteeId, setMyInviteeId] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const listRef = useRef<FlatList>(null);
+
+  // A rightward swipe anywhere on the thread also triggers the same
+  // back-out as the button - only claims the gesture once the movement is
+  // clearly horizontal, so it doesn't fight the FlatList's vertical scroll.
+  const swipeBackResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        gesture.dx > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dx > 60 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
+          onFlipBack();
+        }
+      },
+    })
+  ).current;
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -174,11 +198,21 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
   }, [eventId, fetchLatest, session?.user?.id]);
 
   const handleSend = async () => {
-    const body = draft.trim();
+    // Tapping Send while an autocorrect suggestion is still highlighted
+    // doesn't "accept" it the way pressing space would - blurring forces
+    // iOS to commit the pending correction, and the short wait gives its
+    // onChangeText time to land before the text is read for sending.
+    // Otherwise the uncorrected word goes out, with the correction landing
+    // a moment later and nothing sent for it - the second send it looked
+    // like this needed.
+    inputRef.current?.blur();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const body = draftRef.current.trim();
     if (!body || !session?.user?.id) return;
 
     setSending(true);
-    setDraft('');
+    updateDraft('');
 
     const { error } = await supabase
       .from('messages')
@@ -188,7 +222,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
 
     if (error) {
       console.error('Error sending message:', error);
-      setDraft(body);
+      updateDraft(body);
       return;
     }
 
@@ -199,26 +233,25 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
       supabase.from('events').select('title').eq('id', eventId).single(),
     ]);
 
-    const recipientIds = (otherInvitees || [])
-      .filter((i: any) => !i.muted)
-      .map((i: any) => i.user_id)
-      .filter(Boolean);
+    const recipientIds = (otherInvitees || []).filter((i: any) => !i.muted).map((i: any) => i.user_id);
+    // Muted still means "don't buzz my phone," not "hide this from me
+    // entirely" - those recipients still get a silent, no-push notification
+    // row so there's something to catch up on later.
+    const mutedRecipientIds = (otherInvitees || []).filter((i: any) => i.muted).map((i: any) => i.user_id);
     const senderDisplayName =
       session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Someone';
+    const notifTitle = eventRow?.title ? `New message — ${eventRow.title}` : 'New message';
+    const notifBody = `${senderDisplayName}: ${body}`;
 
-    notify(
-      recipientIds,
-      eventRow?.title ? `New message — ${eventRow.title}` : 'New message',
-      `${senderDisplayName}: ${body}`,
-      { eventId, type: 'message' }
-    );
+    notify(recipientIds, notifTitle, notifBody, { eventId, type: 'message' });
+    notify(mutedRecipientIds, notifTitle, notifBody, { eventId, type: 'message', silent: true });
   };
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1 }} {...swipeBackResponder.panHandlers}>
       <View style={styles.topRow}>
         <TouchableOpacity onPress={onFlipBack} style={styles.backButton}>
-          <Text style={styles.backText}>‹ Back to details</Text>
+          <Text style={styles.backText}>‹ Event Details</Text>
         </TouchableOpacity>
         {myInviteeId && (
           <TouchableOpacity onPress={toggleMuted}>
@@ -287,11 +320,12 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
         ]}
       >
         <TextInput
+          ref={inputRef}
           style={styles.input}
           placeholder="Message..."
           placeholderTextColor={colors.textMuted}
           value={draft}
-          onChangeText={setDraft}
+          onChangeText={updateDraft}
           multiline
         />
         <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={sending || !draft.trim()}>

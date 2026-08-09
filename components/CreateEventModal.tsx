@@ -62,6 +62,8 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [favoriteContactIds, setFavoriteContactIds] = useState<string[]>([]);
+  const [showAllContacts, setShowAllContacts] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -140,6 +142,29 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
 
     if (contactsError) console.error('Error loading contacts:', contactsError);
     setContacts(contactsData || []);
+
+    // "Favorites" = people you've actually invited to something before,
+    // most-pinged first. No GROUP BY without an RPC this repo doesn't have,
+    // so just tally it client-side - a family's contact list is small.
+    const contactIds = (contactsData || []).map((c) => c.id);
+    if (contactIds.length > 0) {
+      const { data: inviteRows, error: inviteRowsError } = await supabase
+        .from('invitees')
+        .select('contact_id')
+        .in('contact_id', contactIds);
+      if (inviteRowsError) console.error('Error loading ping counts:', inviteRowsError);
+      const counts = new Map<string, number>();
+      (inviteRows || []).forEach((r: any) => {
+        if (!r.contact_id) return;
+        counts.set(r.contact_id, (counts.get(r.contact_id) || 0) + 1);
+      });
+      const ranked = Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([id]) => id);
+      setFavoriteContactIds(ranked.slice(0, 6));
+    } else {
+      setFavoriteContactIds([]);
+    }
 
     const { data: groupsData, error: groupsError } = await supabase
       .from('groups')
@@ -257,6 +282,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
     setIsPublic(false);
     setImageUri(null);
     setItems([]);
+    setShowAllContacts(false);
   };
 
   const formatDate = (date: Date) =>
@@ -593,9 +619,16 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
               </>
             )}
 
-            <Text style={styles.sublabel}>People</Text>
+            <Text style={styles.sublabel}>
+              {showAllContacts || favoriteContactIds.length === 0 ? 'People' : 'Favorites'}
+            </Text>
             <View style={styles.chipRow}>
-              {contacts.map((c) => (
+              {(showAllContacts || favoriteContactIds.length === 0
+                ? contacts
+                : (favoriteContactIds
+                    .map((id) => contacts.find((c) => c.id === id))
+                    .filter(Boolean) as Contact[])
+              ).map((c) => (
                 <TouchableOpacity
                   key={c.id}
                   style={[styles.chip, selectedContactIds.includes(c.id) && styles.chipSelected]}
@@ -610,6 +643,11 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
                 <Text style={styles.addChipText}>+ New</Text>
               </TouchableOpacity>
             </View>
+            {!showAllContacts && favoriteContactIds.length > 0 && contacts.length > favoriteContactIds.length && (
+              <TouchableOpacity onPress={() => setShowAllContacts(true)}>
+                <Text style={styles.seeAllText}>See all ({contacts.length})</Text>
+              </TouchableOpacity>
+            )}
 
             {addingContact && (
               <View style={styles.addContactRow}>
@@ -755,6 +793,7 @@ const styles = StyleSheet.create({
   editPhotoBadgeIcon: { fontSize: 15 },
   label: { fontWeight: '600', marginTop: 14, marginBottom: 6, color: colors.textPrimary },
   sublabel: { color: colors.textSecondary, fontSize: 13, marginTop: 8, marginBottom: 6 },
+  seeAllText: { color: colors.primary, fontSize: 13, fontWeight: '600', marginTop: 8 },
   helperText: { color: colors.textMuted, fontSize: 13, marginTop: 8, fontStyle: 'italic' },
   importRow: { backgroundColor: colors.surfaceAlt, borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginBottom: 10 },
   importText: { color: colors.primary, fontWeight: '600', fontSize: 14 },

@@ -34,10 +34,15 @@ async function submitQuickRsvp(eventId: string, userId: string, status: Exclude<
   });
 }
 
+type PendingEventModal = { eventId: string; startOnMessages: boolean } | null;
+
 type NotificationsContextType = ReturnType<typeof useNotifications> & {
   popupEventId: string | null;
   openInvitePopup: (eventId: string) => void;
   closeInvitePopup: () => void;
+  pendingEventModal: PendingEventModal;
+  openEventModal: (eventId: string, startOnMessages?: boolean) => void;
+  clearEventModal: () => void;
 };
 
 const noopAsync = async () => {};
@@ -53,10 +58,20 @@ const NotificationsContext = createContext<NotificationsContextType>({
   popupEventId: null,
   openInvitePopup: () => {},
   closeInvitePopup: () => {},
+  pendingEventModal: null,
+  openEventModal: () => {},
+  clearEventModal: () => {},
 });
 
+function getNotificationData(data: unknown): { type: string; eventId?: string; groupId?: string } | null {
+  if (!data || typeof data !== 'object') return null;
+  const d = data as any;
+  return typeof d.type === 'string' ? d : null;
+}
+
 function isInviteNotificationData(data: unknown): data is { type: string; eventId: string } {
-  return !!data && typeof data === 'object' && (data as any).type === 'invite' && !!(data as any).eventId;
+  const d = getNotificationData(data);
+  return !!d && d.type === 'invite' && !!d.eventId;
 }
 
 // A single shared instance so the Home screen's badge and the Notifications
@@ -67,13 +82,19 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const { session } = useAuth();
   const notificationsValue = useNotifications(session?.user?.id);
   const [popupEventId, setPopupEventId] = useState<string | null>(null);
+  const [pendingEventModal, setPendingEventModal] = useState<PendingEventModal>(null);
 
   const openInvitePopup = (eventId: string) => setPopupEventId(eventId);
   const closeInvitePopup = () => setPopupEventId(null);
+  const openEventModal = (eventId: string, startOnMessages = false) =>
+    setPendingEventModal({ eventId, startOnMessages });
+  const clearEventModal = () => setPendingEventModal(null);
 
-  // Turns an incoming/tapped push notification of type 'invite' into the
-  // in-app popup instead of leaving the tap to do nothing (no listener for
-  // this existed before) or relying on the native banner alone.
+  // Turns an incoming/tapped push notification into the right in-app view
+  // instead of leaving the tap to do nothing (no listener for this existed
+  // before) or relying on the native banner alone - an invite opens the
+  // InvitePopup, anything else with an event opens the same card modal used
+  // everywhere else in the app (Home screen listens for pendingEventModal).
   useEffect(() => {
     if (!session?.user?.id) return;
 
@@ -84,14 +105,21 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
     const handleResponse = (response: Notifications.NotificationResponse) => {
       const data = response.notification.request.content.data;
-      if (!isInviteNotificationData(data)) return;
 
-      const quickStatus = QUICK_RSVP_ACTIONS[response.actionIdentifier];
-      if (quickStatus) {
-        submitQuickRsvp(data.eventId, session.user.id, quickStatus);
+      if (isInviteNotificationData(data)) {
+        const quickStatus = QUICK_RSVP_ACTIONS[response.actionIdentifier];
+        if (quickStatus) {
+          submitQuickRsvp(data.eventId, session.user.id, quickStatus);
+          return;
+        }
+        openInvitePopup(data.eventId);
         return;
       }
-      openInvitePopup(data.eventId);
+
+      const generic = getNotificationData(data);
+      if (generic?.eventId) {
+        openEventModal(generic.eventId, generic.type === 'message');
+      }
     };
 
     const responseSub = Notifications.addNotificationResponseReceivedListener(handleResponse);
@@ -105,7 +133,15 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     };
   }, [session?.user?.id]);
 
-  const value: NotificationsContextType = { ...notificationsValue, popupEventId, openInvitePopup, closeInvitePopup };
+  const value: NotificationsContextType = {
+    ...notificationsValue,
+    popupEventId,
+    openInvitePopup,
+    closeInvitePopup,
+    pendingEventModal,
+    openEventModal,
+    clearEventModal,
+  };
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
 }
