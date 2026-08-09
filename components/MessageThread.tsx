@@ -41,7 +41,34 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [myInviteeId, setMyInviteeId] = useState<string | null>(null);
+  const [muted, setMuted] = useState(false);
   const listRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    supabase
+      .from('invitees')
+      .select('id, muted')
+      .eq('event_id', eventId)
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setMyInviteeId(data?.id || null);
+        setMuted(!!data?.muted);
+      });
+  }, [eventId, session?.user?.id]);
+
+  const toggleMuted = async () => {
+    if (!myInviteeId) return;
+    const next = !muted;
+    setMuted(next);
+    const { error } = await supabase.from('invitees').update({ muted: next }).eq('id', myInviteeId);
+    if (error) {
+      console.error('Error updating mute state:', error);
+      setMuted(!next);
+    }
+  };
 
   const senderName = (m: Message) =>
     m.sender_id === session?.user?.id ? 'You' : displayName(m.profiles, 'Someone');
@@ -168,11 +195,14 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     await fetchLatest();
 
     const [{ data: otherInvitees }, { data: eventRow }] = await Promise.all([
-      supabase.from('invitees').select('user_id').eq('event_id', eventId).neq('user_id', session.user.id),
+      supabase.from('invitees').select('user_id, muted').eq('event_id', eventId).neq('user_id', session.user.id),
       supabase.from('events').select('title').eq('id', eventId).single(),
     ]);
 
-    const recipientIds = (otherInvitees || []).map((i: any) => i.user_id).filter(Boolean);
+    const recipientIds = (otherInvitees || [])
+      .filter((i: any) => !i.muted)
+      .map((i: any) => i.user_id)
+      .filter(Boolean);
     const senderDisplayName =
       session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Someone';
 
@@ -186,9 +216,16 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
 
   return (
     <View style={{ flex: 1 }}>
-      <TouchableOpacity onPress={onFlipBack} style={styles.backButton}>
-        <Text style={styles.backText}>‹ Back to details</Text>
-      </TouchableOpacity>
+      <View style={styles.topRow}>
+        <TouchableOpacity onPress={onFlipBack} style={styles.backButton}>
+          <Text style={styles.backText}>‹ Back to details</Text>
+        </TouchableOpacity>
+        {myInviteeId && (
+          <TouchableOpacity onPress={toggleMuted}>
+            <Text style={styles.muteText}>{muted ? '🔕 Muted' : '🔔 Mute'}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       <Text style={styles.header}>Messages</Text>
 
@@ -266,8 +303,10 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backButton: { marginBottom: 8 },
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  backButton: {},
   backText: { color: colors.primary, fontSize: 16, fontWeight: '600' },
+  muteText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
   header: { color: colors.textPrimary, fontSize: 20, fontWeight: '700', marginBottom: 12 },
   emptyText: { color: colors.textMuted, textAlign: 'center', marginTop: 40, fontSize: 15 },
   endOfThreadText: { color: colors.textMuted, textAlign: 'center', fontSize: 12, marginVertical: 12 },

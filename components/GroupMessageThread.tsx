@@ -40,7 +40,36 @@ export default function GroupMessageThread({ groupId }: Props) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [myMemberId, setMyMemberId] = useState<string | null>(null);
+  const [muted, setMuted] = useState(false);
   const listRef = useRef<FlatList>(null);
+
+  // Owners don't have their own group_members row (see recipient logic in
+  // handleSend below), so muting is only offered to actual members for now.
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    supabase
+      .from('group_members')
+      .select('id, muted')
+      .eq('group_id', groupId)
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setMyMemberId(data?.id || null);
+        setMuted(!!data?.muted);
+      });
+  }, [groupId, session?.user?.id]);
+
+  const toggleMuted = async () => {
+    if (!myMemberId) return;
+    const next = !muted;
+    setMuted(next);
+    const { error } = await supabase.from('group_members').update({ muted: next }).eq('id', myMemberId);
+    if (error) {
+      console.error('Error updating mute state:', error);
+      setMuted(!next);
+    }
+  };
 
   const senderName = (m: GroupMessage) =>
     m.sender_id === session?.user?.id ? 'You' : displayName(m.profiles, 'Someone');
@@ -170,11 +199,16 @@ export default function GroupMessageThread({ groupId }: Props) {
     // excluded, unlike events which only ever have one host.
     const [{ data: groupRow }, { data: memberRows }] = await Promise.all([
       supabase.from('groups').select('name, owner_id').eq('id', groupId).single(),
-      supabase.from('group_members').select('user_id').eq('group_id', groupId).not('user_id', 'is', null),
+      supabase.from('group_members').select('user_id, muted').eq('group_id', groupId).not('user_id', 'is', null),
     ]);
 
     const recipientIds = Array.from(
-      new Set([groupRow?.owner_id, ...(memberRows || []).map((m: any) => m.user_id)].filter(Boolean))
+      new Set(
+        [
+          groupRow?.owner_id,
+          ...(memberRows || []).filter((m: any) => !m.muted).map((m: any) => m.user_id),
+        ].filter(Boolean)
+      )
     ).filter((id) => id !== session.user.id);
 
     const senderDisplayName =
@@ -190,6 +224,12 @@ export default function GroupMessageThread({ groupId }: Props) {
 
   return (
     <View style={{ flex: 1 }}>
+      {myMemberId && (
+        <TouchableOpacity onPress={toggleMuted} style={styles.muteRow}>
+          <Text style={styles.muteText}>{muted ? '🔕 Muted' : '🔔 Mute'}</Text>
+        </TouchableOpacity>
+      )}
+
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
@@ -260,6 +300,8 @@ export default function GroupMessageThread({ groupId }: Props) {
 }
 
 const styles = StyleSheet.create({
+  muteRow: { alignItems: 'flex-end', marginBottom: 8 },
+  muteText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
   emptyText: { color: colors.textMuted, textAlign: 'center', marginTop: 40, fontSize: 15 },
   endOfThreadText: { color: colors.textMuted, textAlign: 'center', fontSize: 12, marginVertical: 12 },
   bubbleRow: { flexDirection: 'row', marginBottom: 10 },
