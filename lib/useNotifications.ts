@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { supabase } from '../supabase';
 import { NotificationType } from './notify';
@@ -151,11 +151,26 @@ export function useNotifications(userId?: string | null) {
   // but that only ever grows a stale number until the next push - reading
   // notifications in-app (or the pending-invite list shrinking) needs to
   // clear it here too, not just wait for the next message to correct it.
+  //
+  // Debounced rather than called directly on every change: unreadCount can
+  // tick several times in quick succession (a burst of realtime
+  // notification updates, e.g. several people pinging at once), and a
+  // native module call fired repeatedly back-to-back in that situation was
+  // implicated in a real crash during multi-person testing - this
+  // coalesces a rapid run of changes into a single call ~400ms after
+  // things settle instead of one call per tick.
+  const badgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!userId) return;
-    Notifications.setBadgeCountAsync(unreadCount).catch((err) =>
-      console.error('Error setting badge count:', err)
-    );
+    if (badgeTimeoutRef.current) clearTimeout(badgeTimeoutRef.current);
+    badgeTimeoutRef.current = setTimeout(() => {
+      Notifications.setBadgeCountAsync(unreadCount).catch((err) =>
+        console.error('Error setting badge count:', err)
+      );
+    }, 400);
+    return () => {
+      if (badgeTimeoutRef.current) clearTimeout(badgeTimeoutRef.current);
+    };
   }, [userId, unreadCount]);
 
   return { notifications, pendingInvites, unreadCount, loading, refresh: fetchAll, markRead, markAllRead };
