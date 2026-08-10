@@ -20,15 +20,20 @@ export default function NotificationsScreen() {
 
   // Events open in the same flip-card modal used everywhere else in the
   // app (the Home screen watches pendingEventModal) rather than the
-  // separate full-page route - navigating home first so the modal has
-  // something to render on top of.
+  // separate full-page route - dismissTo('/') returns to the Home screen
+  // that's already on the stack (this screen was itself pushed from
+  // there) rather than push('/'), which was mounting a second, duplicate
+  // Home instance and opening a native modal on it at the same time -
+  // that combination was the actual cause of a real crash during family
+  // testing (two competing native screen/modal instances corrupting the
+  // native view stack).
   const openNotification = (n: NotificationRowData) => {
     markRead(n.id);
     if (n.group_id) {
       router.push(`/groups/${n.group_id}`);
     } else if (n.event_id) {
       openEventModal(n.event_id, n.type === 'message');
-      router.push('/');
+      router.dismissTo('/');
     }
   };
 
@@ -67,7 +72,7 @@ export default function NotificationsScreen() {
                   snippet={{ senderName: 'Invited', body: 'Tap to respond', createdAt: '' }}
                   onPress={() => {
                     openEventModal(p.event_id);
-                    router.push('/');
+                    router.dismissTo('/');
                   }}
                 />
               ))}

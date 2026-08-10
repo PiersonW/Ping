@@ -21,7 +21,11 @@ function InvitePopupHost() {
       onOpenFull={(eventId) => {
         closeInvitePopup();
         openEventModal(eventId);
-        router.push('/');
+        // dismissTo, not push - returns to the existing Home screen
+        // instead of mounting a second instance of it (push('/') here was
+        // implicated in a real crash - see app/notifications.tsx for the
+        // full explanation).
+        router.dismissTo('/');
       }}
     />
   );
