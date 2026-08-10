@@ -13,6 +13,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { useNotificationsContext } from '../../lib/NotificationsContext';
 import { colors } from '../../lib/theme';
 
 type Group = {
@@ -25,6 +26,7 @@ type Group = {
 export default function GroupsScreen() {
   const { session } = useAuth();
   const router = useRouter();
+  const { openGroupChat } = useNotificationsContext();
 
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,12 +126,23 @@ export default function GroupsScreen() {
           contentContainerStyle={{ paddingVertical: 12 }}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.groupCard} onPress={() => router.push(`/groups/${item.id}`)}>
-              <Text style={styles.groupName}>{item.name}</Text>
-              <Text style={styles.groupMeta}>
-                {item.memberCount} {item.memberCount === 1 ? 'member' : 'members'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.groupCard}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push(`/groups/${item.id}`)}>
+                <Text style={styles.groupName}>{item.name}</Text>
+                <Text style={styles.groupMeta}>
+                  {item.memberCount} {item.memberCount === 1 ? 'member' : 'members'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.chatButton}
+                onPress={() => {
+                  openGroupChat(item.id, item.name);
+                  router.dismissTo('/');
+                }}
+              >
+                <Text style={styles.chatButtonIcon}>💬</Text>
+              </TouchableOpacity>
+            </View>
           )}
           ListEmptyComponent={
             <Text style={styles.emptyText}>No groups yet — tap + New to create one.</Text>
@@ -166,14 +179,26 @@ const styles = StyleSheet.create({
   },
   createButtonText: { color: colors.textOnPrimary, fontWeight: '600' },
   groupCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 14,
     padding: 16,
     marginBottom: 10,
+    gap: 12,
   },
   groupName: { color: colors.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 4 },
   groupMeta: { color: colors.textSecondary, fontSize: 13 },
+  chatButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatButtonIcon: { fontSize: 18 },
   emptyText: { color: colors.textMuted, textAlign: 'center', marginTop: 60, fontSize: 15 },
 });

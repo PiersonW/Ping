@@ -35,6 +35,7 @@ async function submitQuickRsvp(eventId: string, userId: string, status: Exclude<
 }
 
 type PendingEventModal = { eventId: string; startOnMessages: boolean } | null;
+type PendingGroupChat = { groupId: string; groupName?: string } | null;
 
 type NotificationsContextType = ReturnType<typeof useNotifications> & {
   popupEventId: string | null;
@@ -43,6 +44,9 @@ type NotificationsContextType = ReturnType<typeof useNotifications> & {
   pendingEventModal: PendingEventModal;
   openEventModal: (eventId: string, startOnMessages?: boolean) => void;
   clearEventModal: () => void;
+  pendingGroupChat: PendingGroupChat;
+  openGroupChat: (groupId: string, groupName?: string) => void;
+  clearGroupChat: () => void;
 };
 
 const noopAsync = async () => {};
@@ -61,6 +65,9 @@ const NotificationsContext = createContext<NotificationsContextType>({
   pendingEventModal: null,
   openEventModal: () => {},
   clearEventModal: () => {},
+  pendingGroupChat: null,
+  openGroupChat: () => {},
+  clearGroupChat: () => {},
 });
 
 function getNotificationData(data: unknown): { type: string; eventId?: string; groupId?: string } | null {
@@ -83,12 +90,15 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const notificationsValue = useNotifications(session?.user?.id);
   const [popupEventId, setPopupEventId] = useState<string | null>(null);
   const [pendingEventModal, setPendingEventModal] = useState<PendingEventModal>(null);
+  const [pendingGroupChat, setPendingGroupChat] = useState<PendingGroupChat>(null);
 
   const openInvitePopup = (eventId: string) => setPopupEventId(eventId);
   const closeInvitePopup = () => setPopupEventId(null);
   const openEventModal = (eventId: string, startOnMessages = false) =>
     setPendingEventModal({ eventId, startOnMessages });
   const clearEventModal = () => setPendingEventModal(null);
+  const openGroupChat = (groupId: string, groupName?: string) => setPendingGroupChat({ groupId, groupName });
+  const clearGroupChat = () => setPendingGroupChat(null);
 
   // Turns an incoming/tapped push notification into the right in-app view
   // instead of leaving the tap to do nothing (no listener for this existed
@@ -119,6 +129,8 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       const generic = getNotificationData(data);
       if (generic?.eventId) {
         openEventModal(generic.eventId, generic.type === 'message');
+      } else if (generic?.groupId) {
+        openGroupChat(generic.groupId);
       }
     };
 
@@ -141,6 +153,9 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     pendingEventModal,
     openEventModal,
     clearEventModal,
+    pendingGroupChat,
+    openGroupChat,
+    clearGroupChat,
   };
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;

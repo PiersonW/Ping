@@ -15,6 +15,7 @@ import {
 import { useLocalSearchParams, useRouter, useFocusEffect, Stack } from 'expo-router';
 import { supabase } from '../../supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { useNotificationsContext } from '../../lib/NotificationsContext';
 import { findOrCreateContact } from '../../lib/phone';
 import { colors } from '../../lib/theme';
 import ImportContactsModal from '../../components/ImportContactsModal';
@@ -25,6 +26,7 @@ export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session } = useAuth();
   const router = useRouter();
+  const { openGroupChat } = useNotificationsContext();
 
   const [groupName, setGroupName] = useState('');
   const [isShared, setIsShared] = useState(false);
@@ -197,7 +199,19 @@ export default function GroupDetailScreen() {
         </View>
       </View>
 
-      <Text style={styles.title}>{groupName}</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>{groupName}</Text>
+        <TouchableOpacity
+          style={styles.chatButton}
+          onPress={() => {
+            openGroupChat(id, groupName);
+            router.dismissTo('/');
+          }}
+        >
+          <Text style={styles.chatButtonIcon}>💬</Text>
+          <Text style={styles.chatButtonText}>Chat</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.sharedRow}>
         <View style={{ flex: 1 }}>
@@ -293,7 +307,24 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 20 },
   doneText: { color: colors.primary, fontSize: 16, fontWeight: '700' },
   deleteText: { color: colors.danger, fontSize: 15 },
-  title: { color: colors.textPrimary, fontSize: 26, fontWeight: '700', marginTop: 16 },
+  title: { color: colors.textPrimary, fontSize: 26, fontWeight: '700' },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  chatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  chatButtonIcon: { fontSize: 16 },
+  chatButtonText: { color: colors.primary, fontWeight: '600', fontSize: 14 },
   sharedRow: {
     flexDirection: 'row',
     alignItems: 'center',

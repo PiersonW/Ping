@@ -104,8 +104,14 @@ export default function HomeScreen() {
     fetchLatestFor: fetchLatestGroupFor,
     refresh: refreshLatestGroupMessages,
   } = useLatestGroupMessages(session?.user?.id);
-  const { unreadCount, refresh: refreshNotifications, pendingEventModal, clearEventModal } =
-    useNotificationsContext();
+  const {
+    unreadCount,
+    refresh: refreshNotifications,
+    pendingEventModal,
+    clearEventModal,
+    pendingGroupChat,
+    clearGroupChat,
+  } = useNotificationsContext();
 
   useFocusEffect(
     useCallback(() => {
@@ -124,6 +130,16 @@ export default function HomeScreen() {
     setDetailVisible(true);
     clearEventModal();
   }, [pendingEventModal, clearEventModal]);
+
+  // Same idea for group chats - the Groups screens have no chat UI of
+  // their own, they just hand off to this same modal.
+  useEffect(() => {
+    if (!pendingGroupChat) return;
+    setSelectedGroupId(pendingGroupChat.groupId);
+    setSelectedGroupName(pendingGroupChat.groupName ?? null);
+    setGroupChatVisible(true);
+    clearGroupChat();
+  }, [pendingGroupChat, clearGroupChat]);
 
   const fetchEvents = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -267,6 +283,18 @@ export default function HomeScreen() {
         selectedTextColor: colors.textOnPrimary,
       };
     }
+    // A hollow ring around today, layered on top of whatever else that day
+    // already has (an event, or being the selected day) rather than
+    // replacing it - customStyles is additive alongside selected/
+    // selectedColor, it doesn't require switching those over.
+    const todayKey = toDateKey(new Date());
+    marks[todayKey] = {
+      ...(marks[todayKey] || {}),
+      customStyles: {
+        container: { borderWidth: 2, borderColor: colors.warning },
+        text: {},
+      },
+    };
     return marks;
   }, [events, selectedDate]);
 
@@ -660,6 +688,7 @@ export default function HomeScreen() {
           <Calendar
             onDayPress={onDayPress}
             markedDates={markedDates}
+            markingType="custom"
             theme={calendarTheme}
             style={styles.calendar}
             enableSwipeMonths

@@ -90,6 +90,11 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   const [newContactPhone, setNewContactPhone] = useState('');
   const [importVisible, setImportVisible] = useState(false);
 
+  const [items, setItems] = useState<{ id: string; name: string; qty: string; allowCustom: boolean }[]>([]);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemQty, setNewItemQty] = useState('1');
+  const [newItemAllowCustom, setNewItemAllowCustom] = useState(false);
+
   const dragY = useRef(new Animated.Value(0)).current;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
@@ -148,6 +153,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       setSelectedGroupIds([]);
       setExcludedGroupMemberIds([]);
       setShowAllContacts(false);
+      setItems([]);
 
       if (session?.user?.id) {
         loadContactsAndGroups();
@@ -219,7 +225,72 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
         new Set((existingInvitees || []).map((i) => i.contact_id).filter(Boolean))
       );
       setExistingInviteePhones(await getAlreadyInvitedPhones(supabase, event.id));
+
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('items')
+        .select('id, name, quantity_needed, allow_custom')
+        .eq('event_id', event.id)
+        .order('name');
+      if (itemsError) console.error('Error loading items:', itemsError);
+      setItems(
+        (itemsData || []).map((it) => ({
+          id: it.id,
+          name: it.name,
+          qty: String(it.quantity_needed),
+          allowCustom: it.allow_custom,
+        }))
+      );
     }
+  };
+
+  // Unlike CreateEventModal, the event already exists here, so items are
+  // written straight to the database as they're added/removed rather than
+  // queued locally until save.
+  const handleAddItem = async () => {
+    if (!newItemName.trim() || !event) return;
+
+    const { data, error } = await supabase
+      .from('items')
+      .insert([
+        {
+          event_id: event.id,
+          name: newItemName.trim(),
+          quantity_needed: parseInt(newItemQty, 10) || 1,
+          allow_custom: newItemAllowCustom,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error adding item:', error);
+      Alert.alert('Error', 'Could not add that item.');
+      return;
+    }
+
+    setItems((prev) => [
+      ...prev,
+      { id: data.id, name: data.name, qty: String(data.quantity_needed), allowCustom: data.allow_custom },
+    ]);
+    setNewItemName('');
+    setNewItemQty('1');
+    setNewItemAllowCustom(false);
+    Keyboard.dismiss();
+  };
+
+  const removeItem = async (itemId: string) => {
+    // Claims reference the item, so they need to go first or the delete
+    // below would fail against them.
+    const { error: claimsError } = await supabase.from('item_claims').delete().eq('item_id', itemId);
+    if (claimsError) console.error('Error removing item claims:', claimsError);
+
+    const { error } = await supabase.from('items').delete().eq('id', itemId);
+    if (error) {
+      console.error('Error removing item:', error);
+      Alert.alert('Error', 'Could not remove that item.');
+      return;
+    }
+    setItems((prev) => prev.filter((it) => it.id !== itemId));
   };
 
   // Approximation used only for the Save button's label - handleSave
@@ -785,6 +856,54 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
                     </TouchableOpacity>
                   </View>
                 )}
+
+                <Text style={styles.label}>What to bring</Text>
+                <Text style={styles.helperText}>Guests can claim these once they get the invite.</Text>
+
+                {items.map((it) => (
+                  <View key={it.id} style={styles.itemRow}>
+                    <Text style={styles.itemRowText}>
+                      {it.name}
+                      {it.allowCustom ? ' — guests describe' : parseInt(it.qty, 10) > 1 ? ` (x${it.qty})` : ''}
+                    </Text>
+                    <TouchableOpacity onPress={() => removeItem(it.id)}>
+                      <Text style={styles.itemRemoveText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                <TouchableOpacity
+                  style={styles.customToggleRow}
+                  onPress={() => setNewItemAllowCustom((v) => !v)}
+                >
+                  <View style={[styles.checkbox, newItemAllowCustom && styles.checkboxChecked]}>
+                    {newItemAllowCustom && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.customToggleText}>
+                    {'Let each person write in what they’re bringing (e.g. "Side dish")'}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={styles.addContactRow}>
+                  <TextInput
+                    style={[styles.input, { flex: 2 }]}
+                    placeholder="Item (e.g. Chips)"
+                    placeholderTextColor={colors.textMuted}
+                    value={newItemName}
+                    onChangeText={setNewItemName}
+                  />
+                  <TextInput
+                    style={[styles.input, { flex: 1, textAlign: 'center' }]}
+                    placeholder="Qty"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="number-pad"
+                    value={newItemQty}
+                    onChangeText={setNewItemQty}
+                  />
+                  <TouchableOpacity style={styles.addContactButton} onPress={handleAddItem}>
+                    <Text style={styles.addContactButtonText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
               </>
           </ScrollView>
 
@@ -877,6 +996,19 @@ const styles = StyleSheet.create({
   label: { fontWeight: '600', marginTop: 14, marginBottom: 6, color: colors.textPrimary },
   sublabel: { color: colors.textSecondary, fontSize: 13, marginTop: 8, marginBottom: 6 },
   seeAllText: { color: colors.primary, fontSize: 13, fontWeight: '600', marginTop: 8 },
+  helperText: { color: colors.textMuted, fontSize: 13, marginTop: 8, fontStyle: 'italic' },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  itemRowText: { color: colors.textPrimary, fontSize: 15 },
+  itemRemoveText: { color: colors.danger, fontSize: 13, fontWeight: '600' },
+  customToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  customToggleText: { color: colors.textSecondary, fontSize: 13, flex: 1 },
   importRow: { backgroundColor: colors.surfaceAlt, borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginBottom: 10 },
   importText: { color: colors.primary, fontWeight: '600', fontSize: 14 },
   publicRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, paddingVertical: 10 },
