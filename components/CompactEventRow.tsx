@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { colors } from '../lib/theme';
 import { PingEvent } from './EventCard';
 import { LatestMessageInfo } from '../lib/useLatestMessages';
+import { formatEventDate } from '../lib/eventDate';
 
 type Props = {
   event: PingEvent;
@@ -12,10 +13,7 @@ type Props = {
 };
 
 export default function CompactEventRow({ event, snippet, unread = false, onPress }: Props) {
-  const dateLabel = new Date(event.event_date).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-  });
+  const dateLabel = formatEventDate(event.event_date, event.end_date, 'compact');
 
   const previewText = snippet ? `${snippet.senderName}: ${snippet.body}` : 'No messages yet';
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { supabase } from '../supabase';
 import { useAuth } from './AuthContext';
@@ -89,16 +89,54 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const { session } = useAuth();
   const notificationsValue = useNotifications(session?.user?.id);
   const [popupEventId, setPopupEventId] = useState<string | null>(null);
+  // Invites still waiting to be shown after the current one is dismissed -
+  // see the catch-up effect below, which is what actually fills this.
+  const [inviteQueue, setInviteQueue] = useState<string[]>([]);
   const [pendingEventModal, setPendingEventModal] = useState<PendingEventModal>(null);
   const [pendingGroupChat, setPendingGroupChat] = useState<PendingGroupChat>(null);
 
   const openInvitePopup = (eventId: string) => setPopupEventId(eventId);
-  const closeInvitePopup = () => setPopupEventId(null);
+  // X'ing out or responding both call this (InvitePopup calls onClose
+  // after a successful RSVP too) - either way, move on to the next queued
+  // invite instead of just closing, until the queue's empty.
+  const closeInvitePopup = () => {
+    if (inviteQueue.length > 0) {
+      const [next, ...rest] = inviteQueue;
+      setPopupEventId(next);
+      setInviteQueue(rest);
+    } else {
+      setPopupEventId(null);
+    }
+  };
   const openEventModal = (eventId: string, startOnMessages = false) =>
     setPendingEventModal({ eventId, startOnMessages });
   const clearEventModal = () => setPendingEventModal(null);
   const openGroupChat = (groupId: string, groupName?: string) => setPendingGroupChat({ groupId, groupName });
   const clearGroupChat = () => setPendingGroupChat(null);
+
+  // Catches up on every invite that arrived since the app was last opened,
+  // showing them one after another (via the queue + closeInvitePopup
+  // above) instead of leaving people to stumble onto them in Notifications
+  // - runs once per app session, right after the pending-invites list
+  // first loads.
+  const hasCaughtUpRef = useRef(false);
+  useEffect(() => {
+    if (hasCaughtUpRef.current || notificationsValue.loading) return;
+    hasCaughtUpRef.current = true;
+
+    const ids = notificationsValue.pendingInvites.map((p) => p.event_id);
+    if (ids.length === 0) return;
+
+    if (popupEventId) {
+      // A push notification tap already opened one before this ran -
+      // queue the rest behind it rather than override what's showing.
+      setInviteQueue((prev) => [...prev, ...ids.filter((id) => id !== popupEventId)]);
+    } else {
+      const [first, ...rest] = ids;
+      setPopupEventId(first);
+      setInviteQueue(rest);
+    }
+  }, [notificationsValue.loading, notificationsValue.pendingInvites, popupEventId]);
 
   // Turns an incoming/tapped push notification into the right in-app view
   // instead of leaving the tap to do nothing (no listener for this existed

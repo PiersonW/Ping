@@ -37,6 +37,7 @@ import ProfileMenu from "../../components/ProfileMenu";
 import { useAuth } from "../../lib/AuthContext";
 import { useNotificationsContext } from "../../lib/NotificationsContext";
 import { calendarTheme, colors } from "../../lib/theme";
+import { eachDayKeyInRange } from "../../lib/eventDate";
 import { useLatestGroupMessages } from "../../lib/useLatestGroupMessages";
 import { useLatestMessages } from "../../lib/useLatestMessages";
 import { supabase } from "../../supabase";
@@ -74,6 +75,8 @@ export default function HomeScreen() {
   const [openViaMessages, setOpenViaMessages] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showDraftsOnly, setShowDraftsOnly] = useState(false);
+  const [showDeclinedOnly, setShowDeclinedOnly] = useState(false);
+  const [myRsvpByEvent, setMyRsvpByEvent] = useState<Record<string, string>>({});
 
   const [boardView, setBoardView] = useState<"events" | "groups">("events");
   const [groups, setGroups] = useState<PingGroup[]>([]);
@@ -147,16 +150,23 @@ export default function HomeScreen() {
     // Visibility rule: you only see an event if you have an invitee row
     // for it. Hosting an event auto-creates that row (see
     // CreateEventModal), so this one check covers both "you're hosting"
-    // and "you were invited."
+    // and "you were invited." Also grabs your own rsvp_status so declined
+    // events can be filtered out of the default views below.
     const { data: myInvites, error: inviteError } = await supabase
       .from("invitees")
-      .select("event_id")
+      .select("event_id, rsvp_status")
       .eq("user_id", session.user.id);
 
     if (inviteError) {
       console.error("Error fetching invited events:", inviteError);
       return;
     }
+
+    const rsvpByEvent: Record<string, string> = {};
+    (myInvites || []).forEach((i) => {
+      if (i.event_id) rsvpByEvent[i.event_id] = i.rsvp_status;
+    });
+    setMyRsvpByEvent(rsvpByEvent);
 
     const invitedEventIds = Array.from(
       new Set((myInvites || []).map((i) => i.event_id)),
@@ -264,16 +274,52 @@ export default function HomeScreen() {
     setDetailVisible(true);
   };
 
+  // Declined events are hidden from the calendar/lists by default (nothing
+  // to act on there anymore) but never actually removed - toggling
+  // showDeclinedOnly swaps to showing just those, so changing your mind is
+  // still a normal RSVP change away, not a dead end.
+  const declinedFilteredEvents = useMemo(() => {
+    return events.filter((e) => {
+      const isDeclined = myRsvpByEvent[e.id] === "declined";
+      return showDeclinedOnly ? isDeclined : !isDeclined;
+    });
+  }, [events, myRsvpByEvent, showDeclinedOnly]);
+
   const markedDates = useMemo(() => {
     const marks: Record<string, any> = {};
-    events.forEach((e) => {
-      const key = toDateKey(new Date(e.event_date));
-      marks[key] = {
-        ...(marks[key] || {}),
-        selected: true,
-        selectedColor: colors.primaryPale,
-        selectedTextColor: colors.textPrimary,
-      };
+    declinedFilteredEvents.forEach((e) => {
+      const startKey = toDateKey(new Date(e.event_date));
+      const endKey = e.end_date ? toDateKey(new Date(e.end_date)) : null;
+
+      if (endKey && endKey !== startKey) {
+        // Multi-day: shade every day of the span so it reads as one
+        // continuous bar instead of a single circle - borderRadius has to
+        // be forced down from the library's circular default (16) or
+        // adjacent days won't visually connect.
+        eachDayKeyInRange(startKey, endKey).forEach((key) => {
+          marks[key] = {
+            ...(marks[key] || {}),
+            customStyles: {
+              container: {
+                ...(marks[key]?.customStyles?.container || {}),
+                backgroundColor: colors.primaryPale,
+                borderRadius: 6,
+              },
+              text: {
+                ...(marks[key]?.customStyles?.text || {}),
+                color: colors.textPrimary,
+              },
+            },
+          };
+        });
+      } else {
+        marks[startKey] = {
+          ...(marks[startKey] || {}),
+          selected: true,
+          selectedColor: colors.primaryPale,
+          selectedTextColor: colors.textPrimary,
+        };
+      }
     });
     if (selectedDate) {
       marks[selectedDate] = {
@@ -291,15 +337,15 @@ export default function HomeScreen() {
     marks[todayKey] = {
       ...(marks[todayKey] || {}),
       customStyles: {
-        container: { borderWidth: 2, borderColor: colors.warning },
-        text: {},
+        container: { ...(marks[todayKey]?.customStyles?.container || {}), borderWidth: 2, borderColor: colors.warning },
+        text: { ...(marks[todayKey]?.customStyles?.text || {}) },
       },
     };
     return marks;
-  }, [events, selectedDate]);
+  }, [declinedFilteredEvents, selectedDate]);
 
   const visibleEvents = useMemo(() => {
-    let result = events;
+    let result = declinedFilteredEvents;
     if (showDraftsOnly) {
       result = result.filter((e) => e.status === "draft");
     }
@@ -309,7 +355,7 @@ export default function HomeScreen() {
       );
     }
     return result;
-  }, [events, selectedDate, showDraftsOnly]);
+  }, [declinedFilteredEvents, selectedDate, showDraftsOnly]);
 
   // The Message Board (unlike the date-sorted Upcoming list above it) reads
   // like a texting app's conversation list - most recently active thread
@@ -584,9 +630,11 @@ export default function HomeScreen() {
       <Text style={styles.pageTitle}>
         {showDraftsOnly
           ? "Drafts"
-          : selectedDate
-            ? "On this day"
-            : defaultTitle}
+          : showDeclinedOnly
+            ? "Declined"
+            : selectedDate
+              ? "On this day"
+              : defaultTitle}
       </Text>
       <View style={styles.listHeaderActions}>
         {selectedDate && (
@@ -595,16 +643,42 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
         {showDraftsToggle && (
-          <TouchableOpacity onPress={() => setShowDraftsOnly((prev) => !prev)}>
-            <Text
-              style={[
-                styles.draftsText,
-                showDraftsOnly && styles.draftsTextActive,
-              ]}
+          <>
+            <TouchableOpacity
+              onPress={() =>
+                setShowDraftsOnly((prev) => {
+                  if (!prev) setShowDeclinedOnly(false);
+                  return !prev;
+                })
+              }
             >
-              {showDraftsOnly ? "Drafts ✓" : "Drafts"}
-            </Text>
-          </TouchableOpacity>
+              <Text
+                style={[
+                  styles.draftsText,
+                  showDraftsOnly && styles.draftsTextActive,
+                ]}
+              >
+                {showDraftsOnly ? "Drafts ✓" : "Drafts"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() =>
+                setShowDeclinedOnly((prev) => {
+                  if (!prev) setShowDraftsOnly(false);
+                  return !prev;
+                })
+              }
+            >
+              <Text
+                style={[
+                  styles.draftsText,
+                  showDeclinedOnly && styles.draftsTextActive,
+                ]}
+              >
+                {showDeclinedOnly ? "Declined ✓" : "Declined"}
+              </Text>
+            </TouchableOpacity>
+          </>
         )}
       </View>
     </View>
@@ -658,9 +732,11 @@ export default function HomeScreen() {
 
   const emptyText = showDraftsOnly
     ? "No drafts right now."
-    : selectedDate
-      ? "No events on this day."
-      : "No events yet — tap + to create one.";
+    : showDeclinedOnly
+      ? "No declined events."
+      : selectedDate
+        ? "No events on this day."
+        : "No events yet — tap + to create one.";
 
   const groupsEmptyText = "No groups yet — create one from the Groups screen.";
 
@@ -710,6 +786,7 @@ export default function HomeScreen() {
             style={{ flex: 1 }}
             data={visibleEvents}
             keyExtractor={(item) => item.id}
+            extraData={myRsvpByEvent}
             refreshControl={
               <RefreshControl
                 refreshing={loading}
@@ -722,6 +799,7 @@ export default function HomeScreen() {
                 event={item}
                 highlight={item.id === justCreatedId}
                 onPress={openEvent}
+                rsvpStatus={myRsvpByEvent[item.id] as any}
               />
             )}
             ListEmptyComponent={

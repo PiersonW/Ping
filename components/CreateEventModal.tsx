@@ -52,10 +52,15 @@ type Props = {
 export default function CreateEventModal({ visible, onClose, onCreated, initialDate }: Props) {
   const { session } = useAuth();
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
   const [eventDate, setEventDate] = useState(new Date());
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [isMultiDay, setIsMultiDay] = useState(false);
+  const [isAllDay, setIsAllDay] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
+  const [pickerTarget, setPickerTarget] = useState<'start' | 'end'>('start');
   const [submitting, setSubmitting] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -278,8 +283,12 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
 
   const resetForm = () => {
     setTitle('');
+    setDescription('');
     setLocation('');
     setEventDate(buildInitialEventDate());
+    setEndDate(null);
+    setIsMultiDay(false);
+    setIsAllDay(false);
     setSelectedContactIds([]);
     setSelectedGroupIds([]);
     setExcludedGroupMemberIds([]);
@@ -308,10 +317,29 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   };
 
   const onDayPress = (day: { year: number; month: number; day: number }) => {
+    if (pickerTarget === 'end') {
+      const next = new Date(endDate || eventDate);
+      next.setFullYear(day.year, day.month - 1, day.day);
+      setEndDate(next);
+      setShowPicker(false);
+      return;
+    }
     const next = new Date(eventDate);
     next.setFullYear(day.year, day.month - 1, day.day);
     setEventDate(next);
+    // Keep the end date from silently trailing behind a start date that
+    // just got moved past it.
+    if (endDate && endDate.getTime() < next.getTime()) setEndDate(next);
     setShowPicker(false);
+  };
+
+  const toggleMultiDay = () => {
+    setIsMultiDay((prev) => {
+      const next = !prev;
+      if (next && !endDate) setEndDate(eventDate);
+      if (!next) setEndDate(null);
+      return next;
+    });
   };
 
   const resolveInviteeContactIds = (): string[] => {
@@ -364,8 +392,11 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
       .insert([
         {
           title,
+          description: description.trim() || null,
           location,
           event_date: eventDate.toISOString(),
+          end_date: isMultiDay && endDate ? endDate.toISOString() : null,
+          is_all_day: isAllDay,
           status,
           host_id: session.user.id,
           is_public: isPublic,
@@ -502,23 +533,52 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
               onChangeText={setTitle}
             />
 
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.descriptionInput]}
+              placeholder="Any extra details guests should know"
+              placeholderTextColor={colors.textMuted}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+            />
+
             <Text style={styles.label}>Date & Time</Text>
             <View style={styles.row}>
-              <TouchableOpacity style={styles.pillButton} onPress={() => { setPickerMode('date'); setShowPicker(true); }}>
+              <TouchableOpacity
+                style={styles.pillButton}
+                onPress={() => { setPickerMode('date'); setPickerTarget('start'); setShowPicker(true); }}
+              >
                 <Text style={styles.pillButtonText}>{formatDate(eventDate)}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.pillButton} onPress={() => { setPickerMode('time'); setShowPicker(true); }}>
-                <Text style={styles.pillButtonText}>{formatTime(eventDate)}</Text>
-              </TouchableOpacity>
+              {!isAllDay && (
+                <TouchableOpacity
+                  style={styles.pillButton}
+                  onPress={() => { setPickerMode('time'); setPickerTarget('start'); setShowPicker(true); }}
+                >
+                  <Text style={styles.pillButtonText}>{formatTime(eventDate)}</Text>
+                </TouchableOpacity>
+              )}
             </View>
+
+            {isMultiDay && (
+              <View style={[styles.row, { marginTop: 8 }]}>
+                <TouchableOpacity
+                  style={styles.pillButton}
+                  onPress={() => { setPickerMode('date'); setPickerTarget('end'); setShowPicker(true); }}
+                >
+                  <Text style={styles.pillButtonText}>Ends {formatDate(endDate || eventDate)}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {showPicker && pickerMode === 'date' && (
               <View style={styles.calendarWrap}>
                 <Calendar
-                  current={toDateString(eventDate)}
+                  current={toDateString(pickerTarget === 'end' ? endDate || eventDate : eventDate)}
                   onDayPress={onDayPress}
                   markedDates={{
-                    [toDateString(eventDate)]: { selected: true },
+                    [toDateString(pickerTarget === 'end' ? endDate || eventDate : eventDate)]: { selected: true },
                   }}
                   theme={calendarTheme}
                 />
@@ -536,6 +596,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
                 mode="time"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={onChangeDate}
+                minuteInterval={15}
                 themeVariant="light"
                 textColor={colors.textPrimary}
               />
@@ -545,6 +606,26 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
                 <Text style={styles.doneText}>Done</Text>
               </TouchableOpacity>
             )}
+
+            <TouchableOpacity style={styles.publicRow} onPress={toggleMultiDay}>
+              <View style={[styles.checkbox, isMultiDay && styles.checkboxChecked]}>
+                {isMultiDay && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.publicRowTitle}>Multi-day event</Text>
+                <Text style={styles.publicRowSubtitle}>Spans more than one day, like a trip</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.publicRow} onPress={() => setIsAllDay((v) => !v)}>
+              <View style={[styles.checkbox, isAllDay && styles.checkboxChecked]}>
+                {isAllDay && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.publicRowTitle}>All day</Text>
+                <Text style={styles.publicRowSubtitle}>No specific start time</Text>
+              </View>
+            </TouchableOpacity>
 
             <Text style={styles.label}>Location</Text>
             <TextInput
@@ -808,6 +889,7 @@ const styles = StyleSheet.create({
   publicRowTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
   publicRowSubtitle: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, fontSize: 16, color: colors.textPrimary, backgroundColor: colors.surface },
+  descriptionInput: { minHeight: 80, textAlignVertical: 'top' },
   row: { flexDirection: 'row', gap: 10 },
   pillButton: { flex: 1, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, alignItems: 'center' },
   pillButtonText: { color: colors.textPrimary, fontSize: 15 },

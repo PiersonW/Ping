@@ -2,33 +2,40 @@ import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, cardFrameGradient } from '../lib/theme';
+import { formatEventDate, formatEventTime } from '../lib/eventDate';
 
 export type PingEvent = {
   id: string;
   title: string;
   location: string;
   event_date: string;
+  end_date?: string | null;
+  is_all_day?: boolean;
   status?: 'sent' | 'draft';
   image_url?: string | null;
+};
+
+type RsvpStatus = 'pending' | 'accepted' | 'interested' | 'declined';
+
+const RSVP_BADGE: Record<'accepted' | 'interested' | 'declined', { label: string; color: string }> = {
+  accepted: { label: 'Accepted', color: colors.success },
+  interested: { label: 'Interested', color: colors.warning },
+  declined: { label: 'Declined', color: colors.danger },
 };
 
 type Props = {
   event: PingEvent;
   onPress?: (event: PingEvent) => void;
   highlight?: boolean;
+  // Your own response, shown as a small badge so you don't have to open
+  // the card just to remember what you already told the host.
+  rsvpStatus?: RsvpStatus;
 };
 
-export default function EventCard({ event, onPress, highlight }: Props) {
-  const date = new Date(event.event_date);
-  const dateLabel = date.toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
-  const timeLabel = date.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+export default function EventCard({ event, onPress, highlight, rsvpStatus }: Props) {
+  const rsvpBadge = rsvpStatus && rsvpStatus !== 'pending' ? RSVP_BADGE[rsvpStatus] : null;
+  const dateLabel = formatEventDate(event.event_date, event.end_date, 'short');
+  const timeLabel = formatEventTime(event.event_date, event.is_all_day);
 
   return (
     <TouchableOpacity
@@ -46,6 +53,12 @@ export default function EventCard({ event, onPress, highlight }: Props) {
           {event.status === 'draft' && (
             <View style={styles.draftBadge}>
               <Text style={styles.draftBadgeText}>DRAFT</Text>
+            </View>
+          )}
+
+          {!!rsvpBadge && (
+            <View style={[styles.rsvpBadge, { backgroundColor: rsvpBadge.color }]}>
+              <Text style={styles.rsvpBadgeText}>{rsvpBadge.label}</Text>
             </View>
           )}
 
@@ -95,6 +108,16 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   draftBadgeText: { color: '#eee', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  rsvpBadge: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    zIndex: 2,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  rsvpBadgeText: { color: colors.textOnPrimary, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   image: { width: '100%', height: 140, borderRadius: 12, marginBottom: 10 },
   title: { color: colors.textPrimary, fontSize: 18, fontWeight: '800', marginBottom: 6 },
   statBar: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 6, gap: 2 },

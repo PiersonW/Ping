@@ -44,9 +44,12 @@ export type EditableEvent = {
   title: string;
   location: string;
   event_date: string;
+  end_date: string | null;
+  is_all_day: boolean;
   image_url: string | null;
   is_public: boolean;
   status: 'sent' | 'draft';
+  description: string | null;
 };
 
 type Props = {
@@ -64,10 +67,15 @@ type Props = {
 export default function EditEventModal({ visible, event, onClose, onSaved, onDeleted }: Props) {
   const { session } = useAuth();
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
   const [eventDate, setEventDate] = useState(new Date());
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [isMultiDay, setIsMultiDay] = useState(false);
+  const [isAllDay, setIsAllDay] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
+  const [pickerTarget, setPickerTarget] = useState<'start' | 'end'>('start');
   const [submitting, setSubmitting] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -144,8 +152,12 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   useEffect(() => {
     if (visible && event) {
       setTitle(event.title);
+      setDescription(event.description || '');
       setLocation(event.location || '');
       setEventDate(new Date(event.event_date));
+      setEndDate(event.end_date ? new Date(event.end_date) : null);
+      setIsMultiDay(!!event.end_date);
+      setIsAllDay(!!event.is_all_day);
       setIsPublic(event.is_public);
       setImageUri(null);
       setExistingImageUrl(event.image_url);
@@ -391,10 +403,29 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   };
 
   const onDayPress = (day: { year: number; month: number; day: number }) => {
+    if (pickerTarget === 'end') {
+      const next = new Date(endDate || eventDate);
+      next.setFullYear(day.year, day.month - 1, day.day);
+      setEndDate(next);
+      setShowPicker(false);
+      return;
+    }
     const next = new Date(eventDate);
     next.setFullYear(day.year, day.month - 1, day.day);
     setEventDate(next);
+    // Keep the end date from silently trailing behind a start date that
+    // just got moved past it.
+    if (endDate && endDate.getTime() < next.getTime()) setEndDate(next);
     setShowPicker(false);
+  };
+
+  const toggleMultiDay = () => {
+    setIsMultiDay((prev) => {
+      const next = !prev;
+      if (next && !endDate) setEndDate(eventDate);
+      if (!next) setEndDate(null);
+      return next;
+    });
   };
 
   const resolveInviteeContactIds = (): string[] => {
@@ -424,11 +455,15 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   // other silently.
   const confirmAndSave = (sendNow: boolean) => {
     if (!event) return;
+    const nextEndDate = isMultiDay && endDate ? endDate.toISOString() : null;
     const changedDetails =
       !isDraft &&
       (title !== event.title ||
+        description.trim() !== (event.description || '') ||
         location !== (event.location || '') ||
-        eventDate.toISOString() !== event.event_date);
+        eventDate.toISOString() !== event.event_date ||
+        nextEndDate !== (event.end_date || null) ||
+        isAllDay !== !!event.is_all_day);
 
     if (!changedDetails) {
       handleSave(sendNow, false);
@@ -472,8 +507,11 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
 
     const updates: Record<string, any> = {
       title,
+      description: description.trim() || null,
       location,
       event_date: eventDate.toISOString(),
+      end_date: isMultiDay && endDate ? endDate.toISOString() : null,
+      is_all_day: isAllDay,
       is_public: isPublic,
       image_url: imageUrl,
     };
@@ -575,47 +613,58 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
     // any single step threw (a network blip, an RLS rejection), the catch
     // block below didn't exist yet, so setSubmitting(false) never ran and
     // the modal was stuck showing its "deleting" state forever, which reads
-    // as the whole app freezing on delete.
+    // as the whole app freezing on delete. That catch alone isn't enough
+    // for a step that never resolves OR rejects (a genuinely stuck request
+    // rather than a fast failure) - a real family-testing report of exactly
+    // this (frozen, no crash log, had to force-quit) had no error to catch
+    // in the first place. Racing the whole sequence against a timeout means
+    // it fails loudly instead of hanging forever either way.
+    const TIMEOUT_MS = 15000;
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Timed out deleting event')), TIMEOUT_MS)
+    );
+
     try {
-      if (shouldNotify) {
-        const { data: allInvitees } = await supabase
-          .from('invitees')
-          .select('user_id')
-          .eq('event_id', event.id);
-        const recipientIds = (allInvitees || [])
-          .map((i) => i.user_id)
-          .filter((id): id is string => !!id && id !== session?.user?.id);
-        if (recipientIds.length > 0) {
-          notify(recipientIds, 'Event canceled', `"${title}" has been canceled.`, {
-            eventId: event.id,
-            type: 'event_canceled',
-          });
-        }
-      }
+      await Promise.race([
+        (async () => {
+          if (shouldNotify) {
+            const { data: allInvitees } = await supabase
+              .from('invitees')
+              .select('user_id')
+              .eq('event_id', event.id);
+            const recipientIds = (allInvitees || [])
+              .map((i) => i.user_id)
+              .filter((id): id is string => !!id && id !== session?.user?.id);
+            if (recipientIds.length > 0) {
+              notify(recipientIds, 'Event canceled', `"${title}" has been canceled.`, {
+                eventId: event.id,
+                type: 'event_canceled',
+              });
+            }
+          }
 
-      // Cascade delete configuration on the DB side is unknown, so clean up
-      // dependents manually rather than risk a foreign-key failure.
-      const { data: eventItems } = await supabase.from('items').select('id').eq('event_id', event.id);
-      const itemIds = (eventItems || []).map((i) => i.id);
-      if (itemIds.length > 0) {
-        await supabase.from('item_claims').delete().in('item_id', itemIds);
-      }
-      await supabase.from('items').delete().eq('event_id', event.id);
-      await supabase.from('messages').delete().eq('event_id', event.id);
-      await supabase.from('invitees').delete().eq('event_id', event.id);
+          // Cascade delete configuration on the DB side is unknown, so
+          // clean up dependents manually rather than risk a foreign-key
+          // failure.
+          const { data: eventItems } = await supabase.from('items').select('id').eq('event_id', event.id);
+          const itemIds = (eventItems || []).map((i) => i.id);
+          if (itemIds.length > 0) {
+            await supabase.from('item_claims').delete().in('item_id', itemIds);
+          }
+          await supabase.from('items').delete().eq('event_id', event.id);
+          await supabase.from('messages').delete().eq('event_id', event.id);
+          await supabase.from('invitees').delete().eq('event_id', event.id);
 
-      const { error } = await supabase.from('events').delete().eq('id', event.id);
+          const { error } = await supabase.from('events').delete().eq('id', event.id);
+          if (error) throw error;
 
-      if (error) {
-        console.error('Error deleting event:', error);
-        Alert.alert('Error', 'Could not delete this event.');
-        return;
-      }
-
-      onDeleted();
+          onDeleted();
+        })(),
+        timeout,
+      ]);
     } catch (err) {
       console.error('Error deleting event:', err);
-      Alert.alert('Error', 'Could not delete this event.');
+      Alert.alert('Error', 'Could not delete this event. Check your connection and try again.');
     } finally {
       setSubmitting(false);
     }
@@ -681,23 +730,52 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
               onChangeText={setTitle}
             />
 
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.descriptionInput]}
+              placeholder="Any extra details guests should know"
+              placeholderTextColor={colors.textMuted}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+            />
+
             <Text style={styles.label}>Date & Time</Text>
             <View style={styles.row}>
-              <TouchableOpacity style={styles.pillButton} onPress={() => { setPickerMode('date'); setShowPicker(true); }}>
+              <TouchableOpacity
+                style={styles.pillButton}
+                onPress={() => { setPickerMode('date'); setPickerTarget('start'); setShowPicker(true); }}
+              >
                 <Text style={styles.pillButtonText}>{formatDate(eventDate)}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.pillButton} onPress={() => { setPickerMode('time'); setShowPicker(true); }}>
-                <Text style={styles.pillButtonText}>{formatTime(eventDate)}</Text>
-              </TouchableOpacity>
+              {!isAllDay && (
+                <TouchableOpacity
+                  style={styles.pillButton}
+                  onPress={() => { setPickerMode('time'); setPickerTarget('start'); setShowPicker(true); }}
+                >
+                  <Text style={styles.pillButtonText}>{formatTime(eventDate)}</Text>
+                </TouchableOpacity>
+              )}
             </View>
+
+            {isMultiDay && (
+              <View style={[styles.row, { marginTop: 8 }]}>
+                <TouchableOpacity
+                  style={styles.pillButton}
+                  onPress={() => { setPickerMode('date'); setPickerTarget('end'); setShowPicker(true); }}
+                >
+                  <Text style={styles.pillButtonText}>Ends {formatDate(endDate || eventDate)}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {showPicker && pickerMode === 'date' && (
               <View style={styles.calendarWrap}>
                 <Calendar
-                  current={toDateString(eventDate)}
+                  current={toDateString(pickerTarget === 'end' ? endDate || eventDate : eventDate)}
                   onDayPress={onDayPress}
                   markedDates={{
-                    [toDateString(eventDate)]: { selected: true },
+                    [toDateString(pickerTarget === 'end' ? endDate || eventDate : eventDate)]: { selected: true },
                   }}
                   theme={calendarTheme}
                 />
@@ -715,6 +793,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
                 mode="time"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={onChangeDate}
+                minuteInterval={15}
                 themeVariant="light"
                 textColor={colors.textPrimary}
               />
@@ -724,6 +803,26 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
                 <Text style={styles.doneText}>Done</Text>
               </TouchableOpacity>
             )}
+
+            <TouchableOpacity style={styles.publicRow} onPress={toggleMultiDay}>
+              <View style={[styles.checkbox, isMultiDay && styles.checkboxChecked]}>
+                {isMultiDay && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.publicRowTitle}>Multi-day event</Text>
+                <Text style={styles.publicRowSubtitle}>Spans more than one day, like a trip</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.publicRow} onPress={() => setIsAllDay((v) => !v)}>
+              <View style={[styles.checkbox, isAllDay && styles.checkboxChecked]}>
+                {isAllDay && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.publicRowTitle}>All day</Text>
+                <Text style={styles.publicRowSubtitle}>No specific start time</Text>
+              </View>
+            </TouchableOpacity>
 
             <Text style={styles.label}>Location</Text>
             <TextInput
@@ -1018,6 +1117,7 @@ const styles = StyleSheet.create({
   publicRowTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
   publicRowSubtitle: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, fontSize: 16, color: colors.textPrimary, backgroundColor: colors.surface },
+  descriptionInput: { minHeight: 80, textAlignVertical: 'top' },
   row: { flexDirection: 'row', gap: 10 },
   pillButton: { flex: 1, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, alignItems: 'center' },
   pillButtonText: { color: colors.textPrimary, fontSize: 15 },

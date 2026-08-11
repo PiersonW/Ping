@@ -23,16 +23,20 @@ import { notify } from '../lib/notify';
 import { submitRsvp, RsvpStatus } from '../lib/rsvp';
 import { scheduleEventReminder, cancelEventReminder } from '../lib/eventReminders';
 import { displayName } from '../lib/displayName';
+import { formatEventDate, formatEventTime } from '../lib/eventDate';
 
 type EventDetail = {
   id: string;
   title: string;
   location: string;
   event_date: string;
+  end_date: string | null;
+  is_all_day: boolean;
   host_id: string | null;
   is_public: boolean;
   image_url: string | null;
   status: 'sent' | 'draft';
+  description: string | null;
 };
 
 type InviteeRow = {
@@ -312,13 +316,8 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
     );
   }
 
-  const date = new Date(event.event_date);
-  const dateLabel = date.toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
-  const timeLabel = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const dateLabel = formatEventDate(event.event_date, event.end_date, 'long');
+  const timeLabel = formatEventTime(event.event_date, event.is_all_day);
 
   const counts = invitees.reduce(
     (acc, inv) => {
@@ -374,6 +373,7 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
         <Text style={styles.meta}>{dateLabel}</Text>
         <Text style={styles.meta}>{timeLabel}</Text>
         {!!event.location && <Text style={styles.meta}>{event.location}</Text>}
+        {!!event.description && <Text style={styles.description}>{event.description}</Text>}
 
         <View style={styles.visibilityRow}>
           <View style={[styles.visibilityBadge, event.is_public ? styles.publicBadge : styles.privateBadge]}>
@@ -625,9 +625,12 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
             title: event.title,
             location: event.location,
             event_date: event.event_date,
+            end_date: event.end_date,
+            is_all_day: event.is_all_day,
             image_url: event.image_url,
             is_public: event.is_public,
             status: event.status,
+            description: event.description,
           } as EditableEvent
         }
         onClose={() => setEditModalVisible(false)}
@@ -675,6 +678,7 @@ const styles = StyleSheet.create({
   image: { width: '100%', height: 180, borderRadius: 15 },
   title: { color: colors.textPrimary, fontSize: 26, fontWeight: '700', marginBottom: 8 },
   meta: { color: colors.textSecondary, fontSize: 15, marginBottom: 2 },
+  description: { color: colors.textPrimary, fontSize: 15, lineHeight: 21, marginTop: 10 },
   visibilityRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 12 },
   visibilityBadge: { borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
   publicBadge: { backgroundColor: '#DFF3E0' },

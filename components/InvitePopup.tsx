@@ -5,6 +5,7 @@ import { useAuth } from '../lib/AuthContext';
 import { colors } from '../lib/theme';
 import { displayName } from '../lib/displayName';
 import { submitRsvp } from '../lib/rsvp';
+import { formatEventDate, formatEventTime } from '../lib/eventDate';
 import {
   getCalendarPermissionStatus,
   requestCalendarAccess,
@@ -17,6 +18,8 @@ type PopupEvent = {
   title: string;
   location: string;
   event_date: string;
+  end_date: string | null;
+  is_all_day: boolean;
   host_id: string | null;
   image_url: string | null;
 };
@@ -77,7 +80,11 @@ export default function InvitePopup({ eventId, onClose, onOpenFull }: Props) {
 
     (async () => {
       const [{ data: eventData, error: eventError }, { data: inviteeData, error: inviteeError }] = await Promise.all([
-        supabase.from('events').select('id, title, location, event_date, host_id, image_url').eq('id', eventId).single(),
+        supabase
+          .from('events')
+          .select('id, title, location, event_date, end_date, is_all_day, host_id, image_url')
+          .eq('id', eventId)
+          .single(),
         supabase
           .from('invitees')
           .select('id, rsvp_status')
@@ -144,12 +151,8 @@ export default function InvitePopup({ eventId, onClose, onOpenFull }: Props) {
 
   if (!eventId) return null;
 
-  const dateLabel = event
-    ? new Date(event.event_date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
-    : '';
-  const timeLabel = event
-    ? new Date(event.event_date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-    : '';
+  const dateLabel = event ? formatEventDate(event.event_date, event.end_date, 'long') : '';
+  const timeLabel = event ? formatEventTime(event.event_date, event.is_all_day) : '';
 
   return (
     <Modal visible={!!eventId} transparent animationType="fade" onRequestClose={onClose}>
