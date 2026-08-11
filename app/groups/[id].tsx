@@ -29,8 +29,10 @@ export default function GroupDetailScreen() {
   const { openGroupChat } = useNotificationsContext();
 
   const [groupName, setGroupName] = useState('');
+  const [isOwner, setIsOwner] = useState(true);
   const [isShared, setIsShared] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [memberNames, setMemberNames] = useState<string[]>([]);
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingContact, setAddingContact] = useState(false);
@@ -41,23 +43,33 @@ export default function GroupDetailScreen() {
   const fetchData = useCallback(async () => {
     if (!session?.user?.id) return;
 
-    const [{ data: groupData, error: groupError }, { data: contactsData, error: contactsError }] =
-      await Promise.all([
-        supabase.from('groups').select('id, name, is_shared, group_members(contact_id)').eq('id', id).single(),
-        supabase
-          .from('contacts')
-          .select('id, name, phone, linked_user_id')
-          .eq('owner_id', session.user.id)
-          .order('name'),
-      ]);
-
+    const { data: groupData, error: groupError } = await supabase
+      .from('groups')
+      .select('id, name, owner_id, is_shared, group_members(contact_id, contacts(name))')
+      .eq('id', id)
+      .single();
     if (groupError) console.error('Error fetching group:', groupError);
-    if (contactsError) console.error('Error fetching contacts:', contactsError);
+
+    const owner = groupData?.owner_id === session.user.id;
 
     setGroupName(groupData?.name || '');
+    setIsOwner(owner);
     setIsShared(!!groupData?.is_shared);
     setMemberIds((groupData?.group_members || []).map((m: any) => m.contact_id));
-    setAllContacts(contactsData || []);
+    setMemberNames((groupData?.group_members || []).map((m: any) => m.contacts?.name || 'Someone'));
+
+    // The member-management contact list only matters (and is only
+    // readable) for the group's own owner - a shared-with-you view is
+    // read-only, so there's nothing to load it for.
+    if (owner) {
+      const { data: contactsData, error: contactsError } = await supabase
+        .from('contacts')
+        .select('id, name, phone, linked_user_id')
+        .eq('owner_id', session.user.id)
+        .order('name');
+      if (contactsError) console.error('Error fetching contacts:', contactsError);
+      setAllContacts(contactsData || []);
+    }
   }, [id, session?.user?.id]);
 
   useFocusEffect(
@@ -193,9 +205,11 @@ export default function GroupDetailScreen() {
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={styles.doneText}>Done</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleDeleteGroup}>
-            <Text style={styles.deleteText}>Delete</Text>
-          </TouchableOpacity>
+          {isOwner && (
+            <TouchableOpacity onPress={handleDeleteGroup}>
+              <Text style={styles.deleteText}>Delete</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -213,81 +227,104 @@ export default function GroupDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.sharedRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.sharedTitle}>Shared group</Text>
-          <Text style={styles.sharedSubtitle}>
-            {isShared
-              ? 'Marked as shared — visible to group members once cross-account group sharing is built'
-              : 'Private — only visible to you'}
-          </Text>
+      {isOwner ? (
+        <View style={styles.sharedRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sharedTitle}>Shared group</Text>
+            <Text style={styles.sharedSubtitle}>
+              {isShared ? 'Members can see this group and use it in their own pings' : 'Private — only visible to you'}
+            </Text>
+          </View>
+          <Switch
+            value={isShared}
+            onValueChange={handleToggleShared}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.white}
+          />
         </View>
-        <Switch
-          value={isShared}
-          onValueChange={handleToggleShared}
-          trackColor={{ false: colors.border, true: colors.primary }}
-          thumbColor={colors.white}
-        />
-      </View>
+      ) : (
+        <View style={styles.sharedRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sharedTitle}>Shared with you</Text>
+            <Text style={styles.sharedSubtitle}>
+              You can view this group, chat with it, and use it to invite people to your own pings.
+            </Text>
+          </View>
+        </View>
+      )}
 
       <Text style={styles.sectionLabel}>{memberIds.length} in this group</Text>
 
-      <FlatList
-        data={allContacts}
-        keyExtractor={(c) => c.id}
-        contentContainerStyle={{ paddingVertical: 12 }}
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => {
-          const member = isMember(item.id);
-          return (
-            <TouchableOpacity style={styles.contactRow} onPress={() => toggleMember(item)}>
-              <Text style={styles.contactName}>{item.name}</Text>
-              <View style={[styles.checkbox, member && styles.checkboxChecked]}>
-                {member && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-            </TouchableOpacity>
-          );
-        }}
-        ListEmptyComponent={
-          !addingContact ? (
-            <Text style={styles.emptyText}>No contacts yet — add one below.</Text>
-          ) : null
-        }
-        ListHeaderComponent={
-          <TouchableOpacity style={styles.importRow} onPress={() => setImportVisible(true)}>
-            <Text style={styles.importText}>📇 Import from Contacts</Text>
-          </TouchableOpacity>
-        }
-        ListFooterComponent={
-          addingContact ? (
-            <View style={styles.addContactRow}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Name"
-                placeholderTextColor={colors.textMuted}
-                value={newContactName}
-                onChangeText={setNewContactName}
-                autoFocus
-              />
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Phone (optional)"
-                placeholderTextColor={colors.textMuted}
-                keyboardType="phone-pad"
-                value={newContactPhone}
-                onChangeText={setNewContactPhone}
-              />
-              <TouchableOpacity style={styles.addContactButton} onPress={handleAddContact}>
-                <Text style={styles.addContactButtonText}>Add</Text>
+      {isOwner ? (
+        <FlatList
+          data={allContacts}
+          keyExtractor={(c) => c.id}
+          contentContainerStyle={{ paddingVertical: 12 }}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => {
+            const member = isMember(item.id);
+            return (
+              <TouchableOpacity style={styles.contactRow} onPress={() => toggleMember(item)}>
+                <Text style={styles.contactName}>{item.name}</Text>
+                <View style={[styles.checkbox, member && styles.checkboxChecked]}>
+                  {member && <Text style={styles.checkmark}>✓</Text>}
+                </View>
               </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.addNewRow} onPress={() => setAddingContact(true)}>
-              <Text style={styles.addNewText}>+ New contact</Text>
+            );
+          }}
+          ListEmptyComponent={
+            !addingContact ? (
+              <Text style={styles.emptyText}>No contacts yet — add one below.</Text>
+            ) : null
+          }
+          ListHeaderComponent={
+            <TouchableOpacity style={styles.importRow} onPress={() => setImportVisible(true)}>
+              <Text style={styles.importText}>📇 Import from Contacts</Text>
             </TouchableOpacity>
-          )
-        }
-      />
+          }
+          ListFooterComponent={
+            addingContact ? (
+              <View style={styles.addContactRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Name"
+                  placeholderTextColor={colors.textMuted}
+                  value={newContactName}
+                  onChangeText={setNewContactName}
+                  autoFocus
+                />
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Phone (optional)"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="phone-pad"
+                  value={newContactPhone}
+                  onChangeText={setNewContactPhone}
+                />
+                <TouchableOpacity style={styles.addContactButton} onPress={handleAddContact}>
+                  <Text style={styles.addContactButtonText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.addNewRow} onPress={() => setAddingContact(true)}>
+                <Text style={styles.addNewText}>+ New contact</Text>
+              </TouchableOpacity>
+            )
+          }
+        />
+      ) : (
+        <FlatList
+          data={memberNames}
+          keyExtractor={(name, i) => `${name}-${i}`}
+          contentContainerStyle={{ paddingVertical: 12 }}
+          renderItem={({ item }) => (
+            <View style={styles.contactRow}>
+              <Text style={styles.contactName}>{item}</Text>
+            </View>
+          )}
+          ListEmptyComponent={<Text style={styles.emptyText}>No one in this group yet.</Text>}
+        />
+      )}
 
       <ImportContactsModal
         visible={importVisible}

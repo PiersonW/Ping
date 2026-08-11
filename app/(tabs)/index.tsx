@@ -293,17 +293,28 @@ export default function HomeScreen() {
 
       if (endKey && endKey !== startKey) {
         // Multi-day: shade every day of the span so it reads as one
-        // continuous bar instead of a single circle - borderRadius has to
-        // be forced down from the library's circular default (16) or
-        // adjacent days won't visually connect.
-        eachDayKeyInRange(startKey, endKey).forEach((key) => {
+        // continuous bar instead of separate circles. The day cell is
+        // centered in a wider column by default, leaving gaps between
+        // days - stretching it to fill the column width and only
+        // rounding the outer corners of the first/last day is what
+        // makes adjacent days actually touch and read as a single bar.
+        const dayKeys = eachDayKeyInRange(startKey, endKey);
+        dayKeys.forEach((key, idx) => {
+          const isStart = idx === 0;
+          const isEnd = idx === dayKeys.length - 1;
           marks[key] = {
             ...(marks[key] || {}),
             customStyles: {
               container: {
                 ...(marks[key]?.customStyles?.container || {}),
                 backgroundColor: colors.primaryPale,
-                borderRadius: 6,
+                width: '100%',
+                alignSelf: 'stretch',
+                borderRadius: 0,
+                borderTopLeftRadius: isStart ? 16 : 0,
+                borderBottomLeftRadius: isStart ? 16 : 0,
+                borderTopRightRadius: isEnd ? 16 : 0,
+                borderBottomRightRadius: isEnd ? 16 : 0,
               },
               text: {
                 ...(marks[key]?.customStyles?.text || {}),

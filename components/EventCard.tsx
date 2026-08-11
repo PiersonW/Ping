@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { colors, cardFrameGradient } from '../lib/theme';
+import { colors } from '../lib/theme';
 import { formatEventDate, formatEventTime } from '../lib/eventDate';
 
 export type PingEvent = {
@@ -17,10 +16,10 @@ export type PingEvent = {
 
 type RsvpStatus = 'pending' | 'accepted' | 'interested' | 'declined';
 
-const RSVP_BADGE: Record<'accepted' | 'interested' | 'declined', { label: string; color: string }> = {
-  accepted: { label: 'Accepted', color: colors.success },
-  interested: { label: 'Interested', color: colors.warning },
-  declined: { label: 'Declined', color: colors.danger },
+const RSVP_DOT_COLOR: Record<'accepted' | 'interested' | 'declined', string> = {
+  accepted: colors.success,
+  interested: colors.warning,
+  declined: colors.danger,
 };
 
 type Props = {
@@ -33,7 +32,7 @@ type Props = {
 };
 
 export default function EventCard({ event, onPress, highlight, rsvpStatus }: Props) {
-  const rsvpBadge = rsvpStatus && rsvpStatus !== 'pending' ? RSVP_BADGE[rsvpStatus] : null;
+  const rsvpDotColor = rsvpStatus && rsvpStatus !== 'pending' ? RSVP_DOT_COLOR[rsvpStatus] : null;
   const dateLabel = formatEventDate(event.event_date, event.end_date, 'short');
   const timeLabel = formatEventTime(event.event_date, event.is_all_day);
 
@@ -43,45 +42,34 @@ export default function EventCard({ event, onPress, highlight, rsvpStatus }: Pro
       activeOpacity={0.85}
       onPress={() => onPress?.(event)}
     >
-      <LinearGradient
-        colors={cardFrameGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.frame}
-      >
-        <View style={styles.inner}>
-          {event.status === 'draft' && (
-            <View style={styles.draftBadge}>
-              <Text style={styles.draftBadgeText}>DRAFT</Text>
-            </View>
-          )}
-
-          {!!rsvpBadge && (
-            <View style={[styles.rsvpBadge, { backgroundColor: rsvpBadge.color }]}>
-              <Text style={styles.rsvpBadgeText}>{rsvpBadge.label}</Text>
-            </View>
-          )}
-
-          {!!event.image_url && (
-            <Image source={{ uri: event.image_url }} style={styles.image} resizeMode="cover" />
-          )}
-
-          <Text style={styles.title} numberOfLines={1}>
-            {event.title}
-          </Text>
-
-          <View style={styles.statBar}>
-            <Text style={styles.statText}>
-              {dateLabel} · {timeLabel}
-            </Text>
-            {!!event.location && (
-              <Text style={styles.statText} numberOfLines={1}>
-                {event.location}
-              </Text>
-            )}
+      <View style={styles.inner}>
+        {event.status === 'draft' && (
+          <View style={styles.draftBadge}>
+            <Text style={styles.draftBadgeText}>DRAFT</Text>
           </View>
+        )}
+
+        {!!rsvpDotColor && <View style={[styles.rsvpDot, { backgroundColor: rsvpDotColor }]} />}
+
+        {!!event.image_url && (
+          <Image source={{ uri: event.image_url }} style={styles.image} resizeMode="cover" />
+        )}
+
+        <Text style={styles.title} numberOfLines={1}>
+          {event.title}
+        </Text>
+
+        <View style={styles.statBar}>
+          <Text style={styles.statText}>
+            {dateLabel} · {timeLabel}
+          </Text>
+          {!!event.location && (
+            <Text style={styles.statText} numberOfLines={1}>
+              {event.location}
+            </Text>
+          )}
         </View>
-      </LinearGradient>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -95,8 +83,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 8,
   },
-  frame: { borderRadius: 20, padding: 3 },
-  inner: { backgroundColor: colors.surface, borderRadius: 17, padding: 10 },
+  inner: {
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.primaryPale,
+    padding: 12,
+  },
   draftBadge: {
     position: 'absolute',
     top: 14,
@@ -108,16 +101,17 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   draftBadgeText: { color: '#eee', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-  rsvpBadge: {
+  rsvpDot: {
     position: 'absolute',
     top: 14,
     right: 14,
     zIndex: 2,
+    width: 12,
+    height: 12,
     borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    borderWidth: 1.5,
+    borderColor: colors.surfaceLight,
   },
-  rsvpBadgeText: { color: colors.textOnPrimary, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   image: { width: '100%', height: 140, borderRadius: 12, marginBottom: 10 },
   title: { color: colors.textPrimary, fontSize: 18, fontWeight: '800', marginBottom: 6 },
   statBar: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 6, gap: 2 },

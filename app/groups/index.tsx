@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
-  FlatList,
+  SectionList,
   StyleSheet,
   TouchableOpacity,
   TextInput,
@@ -21,6 +21,7 @@ type Group = {
   name: string;
   is_shared: boolean;
   memberCount: number;
+  isOwner: boolean;
 };
 
 export default function GroupsScreen() {
@@ -33,13 +34,15 @@ export default function GroupsScreen() {
   const [creating, setCreating] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
 
+  // No owner_id filter here - RLS is what actually decides which rows come
+  // back (groups you own, plus ones someone else marked shared and added
+  // you to), so this reads as one list instead of two separate queries.
   const fetchGroups = useCallback(async () => {
     if (!session?.user?.id) return;
 
     const { data, error } = await supabase
       .from('groups')
-      .select('id, name, is_shared, group_members(contact_id)')
-      .eq('owner_id', session.user.id)
+      .select('id, name, owner_id, is_shared, group_members(contact_id)')
       .order('name');
 
     if (error) {
@@ -53,6 +56,7 @@ export default function GroupsScreen() {
         name: g.name,
         is_shared: g.is_shared,
         memberCount: (g.group_members || []).length,
+        isOwner: g.owner_id === session.user.id,
       }))
     );
   }, [session?.user?.id]);
@@ -83,6 +87,19 @@ export default function GroupsScreen() {
     await fetchGroups();
     router.push(`/groups/${data.id}`);
   };
+
+  const ownedGroups = groups.filter((g) => g.isOwner);
+  const sharedGroups = groups.filter((g) => !g.isOwner);
+  // Only bother splitting into sections (with headers) once there's
+  // actually something shared to distinguish from - otherwise this reads
+  // exactly like the old flat list.
+  const sections =
+    sharedGroups.length > 0
+      ? [
+          { title: 'Your groups', data: ownedGroups },
+          { title: 'Shared with you', data: sharedGroups },
+        ]
+      : [{ title: '', data: ownedGroups }];
 
   return (
     <KeyboardAvoidingView
@@ -120,11 +137,15 @@ export default function GroupsScreen() {
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
-        <FlatList
-          data={groups}
+        <SectionList
+          sections={sections}
           keyExtractor={(g) => g.id}
           contentContainerStyle={{ paddingVertical: 12 }}
           keyboardShouldPersistTaps="handled"
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={({ section }) =>
+            section.title ? <Text style={styles.sectionTitle}>{section.title}</Text> : null
+          }
           renderItem={({ item }) => (
             <View style={styles.groupCard}>
               <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push(`/groups/${item.id}`)}>
@@ -159,6 +180,14 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   backText: { color: colors.primary, fontSize: 16, fontWeight: '600' },
   pageTitle: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
+  sectionTitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginTop: 12,
+    marginBottom: 6,
+  },
   newText: { color: colors.primary, fontSize: 16, fontWeight: '600' },
   createRow: { flexDirection: 'row', gap: 8, marginTop: 16 },
   input: {

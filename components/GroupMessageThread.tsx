@@ -211,8 +211,25 @@ export default function GroupMessageThread({ groupId }: Props) {
     // excluded, unlike events which only ever have one host.
     const [{ data: groupRow }, { data: memberRows }] = await Promise.all([
       supabase.from('groups').select('name, owner_id').eq('id', groupId).single(),
-      supabase.from('group_members').select('user_id, muted').eq('group_id', groupId).not('user_id', 'is', null),
+      // Filtering to `.not('user_id', 'is', null)` here used to silently
+      // drop anyone whose group_members.user_id was never resolved (added
+      // by phone before they had, or had linked, an account) - excluded
+      // from the query entirely, so they never got notified even after
+      // signing up. Fetch everyone and re-resolve each one's link fresh
+      // below instead, same self-healing idea as healContactLink for event
+      // invites.
+      supabase.from('group_members').select('id, user_id, muted, contacts(linked_user_id)').eq('group_id', groupId),
     ]);
+
+    const healedMembers = await Promise.all(
+      (memberRows || []).map(async (m: any) => {
+        const resolvedUserId = m.user_id || m.contacts?.linked_user_id || null;
+        if (resolvedUserId && resolvedUserId !== m.user_id) {
+          await supabase.from('group_members').update({ user_id: resolvedUserId }).eq('id', m.id);
+        }
+        return { ...m, user_id: resolvedUserId };
+      })
+    );
 
     // Owners don't have a group_members row yet (see the mute effect
     // above), so they always land in the normal bucket for now.
@@ -220,14 +237,14 @@ export default function GroupMessageThread({ groupId }: Props) {
       new Set(
         [
           groupRow?.owner_id,
-          ...(memberRows || []).filter((m: any) => !m.muted).map((m: any) => m.user_id),
+          ...healedMembers.filter((m) => !m.muted).map((m) => m.user_id),
         ].filter(Boolean)
       )
     ).filter((id) => id !== session.user.id);
-    const mutedRecipientIds = (memberRows || [])
-      .filter((m: any) => m.muted)
-      .map((m: any) => m.user_id)
-      .filter((id: string) => id !== session.user.id);
+    const mutedRecipientIds = healedMembers
+      .filter((m) => m.muted && m.user_id)
+      .map((m) => m.user_id as string)
+      .filter((id) => id !== session.user.id);
 
     const senderDisplayName =
       session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Someone';

@@ -44,9 +44,11 @@ type InviteeRow = {
   user_id: string | null;
   rsvp_status: RsvpStatus;
   reminder_minutes_before: number | null;
-  profiles: { full_name: string | null; email: string | null } | null;
+  profiles: { full_name: string | null; email: string | null; avatar_url: string | null } | null;
   contacts: { name: string | null } | null;
 };
+
+type HostProfile = { full_name: string | null; email: string | null; avatar_url: string | null };
 
 type ClaimRow = { id: string; invitee_id: string; quantity: number; note: string | null };
 
@@ -78,10 +80,25 @@ type Props = {
   onOpenMessages?: () => void;
 };
 
+function Avatar({ url, name, size = 28 }: { url: string | null | undefined; name: string; size?: number }) {
+  const initial = (name.trim().charAt(0) || '?').toUpperCase();
+  const dimensionStyle = { width: size, height: size, borderRadius: size / 2 };
+  return (
+    <View style={[styles.avatar, dimensionStyle]}>
+      {url ? (
+        <Image source={{ uri: url }} style={dimensionStyle} />
+      ) : (
+        <Text style={[styles.avatarText, { fontSize: size * 0.45 }]}>{initial}</Text>
+      )}
+    </View>
+  );
+}
+
 export default function EventDetailContent({ eventId, onClose, variant = 'modal', onOpenMessages }: Props) {
   const { session } = useAuth();
 
   const [event, setEvent] = useState<EventDetail | null>(null);
+  const [hostProfile, setHostProfile] = useState<HostProfile | null>(null);
   const [invitees, setInvitees] = useState<InviteeRow[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,7 +133,7 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
         supabase.from('events').select('*').eq('id', eventId).single(),
         supabase
           .from('invitees')
-          .select('id, user_id, rsvp_status, reminder_minutes_before, profiles(full_name, email), contacts(name)')
+          .select('id, user_id, rsvp_status, reminder_minutes_before, profiles(full_name, email, avatar_url), contacts(name)')
           .eq('event_id', eventId),
         supabase
           .from('items')
@@ -131,6 +148,18 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
     setEvent(eventData as EventDetail);
     setInvitees((inviteeData as any[]) || []);
     setItems((itemData as any[]) || []);
+
+    if (eventData?.host_id) {
+      const { data: hostData, error: hostError } = await supabase
+        .from('profiles')
+        .select('full_name, email, avatar_url')
+        .eq('id', eventData.host_id)
+        .maybeSingle();
+      if (hostError) console.error('Error fetching host profile:', hostError);
+      setHostProfile((hostData as HostProfile) || null);
+    } else {
+      setHostProfile(null);
+    }
   }, [eventId]);
 
   useEffect(() => {
@@ -375,6 +404,15 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
         {!!event.location && <Text style={styles.meta}>{event.location}</Text>}
         {!!event.description && <Text style={styles.description}>{event.description}</Text>}
 
+        {!!hostProfile && (
+          <View style={styles.hostRow}>
+            <Avatar url={hostProfile.avatar_url} name={displayName(hostProfile)} size={22} />
+            <Text style={styles.hostText}>
+              Hosted by {isHost ? 'you' : displayName(hostProfile)}
+            </Text>
+          </View>
+        )}
+
         <View style={styles.visibilityRow}>
           <View style={[styles.visibilityBadge, event.is_public ? styles.publicBadge : styles.privateBadge]}>
             <Text style={styles.visibilityBadgeText}>{event.is_public ? 'Public' : 'Private'}</Text>
@@ -444,7 +482,10 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
         <View style={styles.guestList}>
           {invitees.map((inv) => (
             <View key={inv.id} style={styles.guestRow}>
-              <Text style={styles.guestName}>{inviteeName(inv)}</Text>
+              <View style={styles.guestIdentity}>
+                <Avatar url={inv.profiles?.avatar_url} name={inviteeName(inv)} size={28} />
+                <Text style={styles.guestName}>{inviteeName(inv)}</Text>
+              </View>
               <Text style={[styles.guestStatus, styles[`status_${inv.rsvp_status}` as const]]}>
                 {inv.rsvp_status}
               </Text>
@@ -640,7 +681,14 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
         }}
         onDeleted={() => {
           setEditModalVisible(false);
-          onClose();
+          // This modal is itself stacked on top of the event detail modal
+          // (onClose here dismisses that outer one). Dismissing both native
+          // <Modal>s in the same tick is what was actually behind the
+          // "freezes, no crash log, force-quit" delete reports - the two
+          // slide-down transitions colliding wedges the modal presentation
+          // state. Letting this one finish first (its slide animation is
+          // ~300ms) before dismissing the outer one avoids the collision.
+          setTimeout(onClose, 350);
         }}
       />
     </>
@@ -679,6 +727,15 @@ const styles = StyleSheet.create({
   title: { color: colors.textPrimary, fontSize: 26, fontWeight: '700', marginBottom: 8 },
   meta: { color: colors.textSecondary, fontSize: 15, marginBottom: 2 },
   description: { color: colors.textPrimary, fontSize: 15, lineHeight: 21, marginTop: 10 },
+  hostRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  hostText: { color: colors.textSecondary, fontSize: 14 },
+  avatar: {
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarText: { color: colors.textOnPrimary, fontWeight: '700' },
   visibilityRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 12 },
   visibilityBadge: { borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
   publicBadge: { backgroundColor: '#DFF3E0' },
@@ -707,11 +764,13 @@ const styles = StyleSheet.create({
   guestRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
   },
-  guestName: { color: colors.textPrimary, fontSize: 15 },
+  guestIdentity: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
+  guestName: { color: colors.textPrimary, fontSize: 15, flexShrink: 1 },
   guestStatus: { fontSize: 13, fontWeight: '600', textTransform: 'capitalize' },
   status_accepted: { color: colors.success },
   status_interested: { color: colors.warning },

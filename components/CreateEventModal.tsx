@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import { findOrCreateContact, healContactLink } from '../lib/phone';
+import { loadMemberGroups } from '../lib/sharedGroups';
 import { sendSmsInvites } from '../lib/sms';
 import { uploadEventImage } from '../lib/imageUpload';
 import { pickEventImage } from '../lib/imagePicker';
@@ -67,6 +68,13 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
+  // Materializing a shared group's members into your own contacts (see
+  // loadMemberGroups) takes a network round trip - blocking Send until it
+  // settles avoids a race where hitting Send with a shared group selected,
+  // before that finishes, would build an invite row for a contact id that
+  // doesn't exist in `contacts` yet and silently invite no one for that
+  // person.
+  const [groupsLoading, setGroupsLoading] = useState(false);
   const [favoriteContactIds, setFavoriteContactIds] = useState<string[]>([]);
   const [showAllContacts, setShowAllContacts] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -139,6 +147,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   }, [visible, session?.user?.id]);
 
   const loadContactsAndGroups = async () => {
+    setGroupsLoading(true);
     const { data: contactsData, error: contactsError } = await supabase
       .from('contacts')
       .select('id, name, phone, email, linked_user_id')
@@ -182,16 +191,29 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
       .order('name');
 
     if (groupsError) console.error('Error loading groups:', groupsError);
-    setGroups(
-      (groupsData || []).map((g: any) => ({
-        id: g.id,
-        name: g.name,
-        members: (g.group_members || []).map((m: any) => ({
-          contactId: m.contact_id,
-          name: m.contacts?.name || 'Unknown',
-        })),
-      }))
+    const ownedGroups = (groupsData || []).map((g: any) => ({
+      id: g.id,
+      name: g.name,
+      members: (g.group_members || []).map((m: any) => ({
+        contactId: m.contact_id,
+        name: m.contacts?.name || 'Unknown',
+      })),
+    }));
+    setGroups(ownedGroups);
+
+    // Groups someone else shared with you - their members get materialized
+    // into your own contacts the first time this loads (see loadMemberGroups).
+    // groupsLoading blocks Send until this settles, below.
+    const { groups: memberGroups, newContacts } = await loadMemberGroups(
+      supabase,
+      session!.user.id,
+      contactsData || []
     );
+    if (memberGroups.length > 0) setGroups([...ownedGroups, ...memberGroups]);
+    if (newContacts.length > 0) {
+      setContacts((prev) => [...prev, ...newContacts].sort((a, b) => a.name.localeCompare(b.name)));
+    }
+    setGroupsLoading(false);
   };
 
   const pickImage = async () => {
@@ -816,9 +838,13 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
               <TouchableOpacity style={[styles.footerButton, styles.saveButton]} onPress={() => submit('draft')} disabled={submitting}>
                 <Text style={styles.saveButtonText}>Save for later</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.footerButton, styles.sendButton]} onPress={() => submit('sent')} disabled={submitting}>
+              <TouchableOpacity
+                style={[styles.footerButton, styles.sendButton]}
+                onPress={() => submit('sent')}
+                disabled={submitting || groupsLoading}
+              >
                 <Text style={styles.sendButtonText}>
-                  {uploadingImage ? 'Uploading photo...' : submitting ? 'Sending...' : 'Send'}
+                  {uploadingImage ? 'Uploading photo...' : submitting ? 'Sending...' : groupsLoading ? 'Loading...' : 'Send'}
                 </Text>
               </TouchableOpacity>
             </View>

@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import { findOrCreateContact, healContactLink, getAlreadyInvitedPhones, normalizePhone } from '../lib/phone';
+import { loadMemberGroups } from '../lib/sharedGroups';
 import { sendSmsInvites } from '../lib/sms';
 import { uploadEventImage } from '../lib/imageUpload';
 import { pickEventImage } from '../lib/imagePicker';
@@ -85,6 +86,11 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   const isDraft = event?.status === 'draft';
 
   const [contacts, setContacts] = useState<Contact[]>([]);
+  // See the matching comment in CreateEventModal - blocks saving/sending
+  // until any shared group's members have finished being materialized into
+  // your own contacts, so a selected shared group can't get silently
+  // dropped from the invite.
+  const [groupsLoading, setGroupsLoading] = useState(false);
   const [favoriteContactIds, setFavoriteContactIds] = useState<string[]>([]);
   const [showAllContacts, setShowAllContacts] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -174,6 +180,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   }, [visible, event?.id]);
 
   const loadContactsAndGroups = async () => {
+    setGroupsLoading(true);
     const { data: contactsData, error: contactsError } = await supabase
       .from('contacts')
       .select('id, name, phone, email, linked_user_id')
@@ -217,16 +224,27 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       .order('name');
 
     if (groupsError) console.error('Error loading groups:', groupsError);
-    setGroups(
-      (groupsData || []).map((g: any) => ({
-        id: g.id,
-        name: g.name,
-        members: (g.group_members || []).map((m: any) => ({
-          contactId: m.contact_id,
-          name: m.contacts?.name || 'Unknown',
-        })),
-      }))
+    const ownedGroups = (groupsData || []).map((g: any) => ({
+      id: g.id,
+      name: g.name,
+      members: (g.group_members || []).map((m: any) => ({
+        contactId: m.contact_id,
+        name: m.contacts?.name || 'Unknown',
+      })),
+    }));
+    setGroups(ownedGroups);
+
+    // Groups someone else shared with you - see the matching comment in
+    // CreateEventModal.
+    const { groups: memberGroups, newContacts } = await loadMemberGroups(
+      supabase,
+      session!.user.id,
+      contactsData || []
     );
+    if (memberGroups.length > 0) setGroups([...ownedGroups, ...memberGroups]);
+    if (newContacts.length > 0) {
+      setContacts((prev) => [...prev, ...newContacts].sort((a, b) => a.name.localeCompare(b.name)));
+    }
 
     if (event) {
       const { data: existingInvitees } = await supabase
@@ -253,6 +271,8 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
         }))
       );
     }
+
+    setGroupsLoading(false);
   };
 
   // Unlike CreateEventModal, the event already exists here, so items are
@@ -1010,22 +1030,36 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
             <View style={styles.footer}>
               {isDraft ? (
                 <>
-                  <TouchableOpacity style={[styles.footerButton, styles.saveButton]} onPress={() => confirmAndSave(false)} disabled={submitting}>
+                  <TouchableOpacity
+                    style={[styles.footerButton, styles.saveButton]}
+                    onPress={() => confirmAndSave(false)}
+                    disabled={submitting || groupsLoading}
+                  >
                     <Text style={styles.saveButtonText}>Save Draft</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.footerButton, styles.sendButton]} onPress={() => confirmAndSave(true)} disabled={submitting}>
+                  <TouchableOpacity
+                    style={[styles.footerButton, styles.sendButton]}
+                    onPress={() => confirmAndSave(true)}
+                    disabled={submitting || groupsLoading}
+                  >
                     <Text style={styles.sendButtonText}>
-                      {uploadingImage ? 'Uploading...' : submitting ? 'Sending...' : 'Send'}
+                      {uploadingImage ? 'Uploading...' : submitting ? 'Sending...' : groupsLoading ? 'Loading...' : 'Send'}
                     </Text>
                   </TouchableOpacity>
                 </>
               ) : (
-                <TouchableOpacity style={[styles.footerButton, styles.sendButton, { flex: 1 }]} onPress={() => confirmAndSave(false)} disabled={submitting}>
+                <TouchableOpacity
+                  style={[styles.footerButton, styles.sendButton, { flex: 1 }]}
+                  onPress={() => confirmAndSave(false)}
+                  disabled={submitting || groupsLoading}
+                >
                   <Text style={styles.sendButtonText}>
                     {uploadingImage
                       ? 'Uploading...'
                       : submitting
                       ? 'Saving...'
+                      : groupsLoading
+                      ? 'Loading...'
                       : getNewInviteeIds().length > 0
                       ? 'Save & Send Invites'
                       : 'Save Changes'}
