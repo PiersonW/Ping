@@ -31,6 +31,7 @@ import CompactGroupRow, { PingGroup } from "../../components/CompactGroupRow";
 import CreateEventModal from "../../components/CreateEventModal";
 import EventCard, { PingEvent } from "../../components/EventCard";
 import EventDetailModal from "../../components/EventDetailModal";
+import ExternalEventRow from "../../components/ExternalEventRow";
 import GroupChatModal from "../../components/GroupChatModal";
 import PingLogoMenu from "../../components/PingLogoMenu";
 import ProfileMenu from "../../components/ProfileMenu";
@@ -38,6 +39,13 @@ import { useAuth } from "../../lib/AuthContext";
 import { useNotificationsContext } from "../../lib/NotificationsContext";
 import { calendarTheme, colors } from "../../lib/theme";
 import { eachDayKeyInRange } from "../../lib/eventDate";
+import {
+  CalendarPermissionStatus,
+  ExternalEvent,
+  getCalendarPermissionStatus,
+  getUpcomingExternalEvents,
+  requestCalendarAccess,
+} from "../../lib/calendarConflicts";
 import { useLatestGroupMessages } from "../../lib/useLatestGroupMessages";
 import { useLatestMessages } from "../../lib/useLatestMessages";
 import { supabase } from "../../supabase";
@@ -77,6 +85,8 @@ export default function HomeScreen() {
   const [showDraftsOnly, setShowDraftsOnly] = useState(false);
   const [showDeclinedOnly, setShowDeclinedOnly] = useState(false);
   const [myRsvpByEvent, setMyRsvpByEvent] = useState<Record<string, string>>({});
+  const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
+  const [calendarPermission, setCalendarPermission] = useState<CalendarPermissionStatus | null>(null);
 
   const [boardView, setBoardView] = useState<"events" | "groups">("events");
   const [groups, setGroups] = useState<PingGroup[]>([]);
@@ -197,6 +207,32 @@ export default function HomeScreen() {
   useEffect(() => {
     fetchEvents().finally(() => setLoading(false));
   }, [fetchEvents]);
+
+  // Only call once permission is confirmed granted - see the matching note
+  // on getUpcomingExternalEvents.
+  const fetchExternalEvents = useCallback(async () => {
+    try {
+      setExternalEvents(await getUpcomingExternalEvents());
+    } catch (err) {
+      console.error("Error fetching phone calendar events:", err);
+    }
+  }, []);
+
+  // Checks silently on load (no prompt) so returning users who already
+  // granted access get their phone-calendar events without an extra tap -
+  // first-time users see an inline "undetermined" prompt instead (below).
+  useEffect(() => {
+    getCalendarPermissionStatus().then((status) => {
+      setCalendarPermission(status);
+      if (status === "granted") fetchExternalEvents();
+    });
+  }, [fetchExternalEvents]);
+
+  const handleEnableExternalCalendar = async () => {
+    const granted = await requestCalendarAccess();
+    setCalendarPermission(granted ? "granted" : "denied");
+    if (granted) await fetchExternalEvents();
+  };
 
   // Groups I'm in = groups I own, union groups I'm a resolved member of.
   const fetchGroups = useCallback(async () => {
@@ -368,6 +404,40 @@ export default function HomeScreen() {
     return result;
   }, [declinedFilteredEvents, selectedDate, showDraftsOnly]);
 
+  // Only the Upcoming list (not the Message Board, calendar dots, or drafts
+  // view) mixes in phone-calendar events - they're not real Ping events, so
+  // keeping them out of visibleEvents itself means nothing else downstream
+  // has to know they exist.
+  type UpcomingListItem =
+    | { kind: "ping"; key: string; date: Date; event: PingEvent }
+    | { kind: "external"; key: string; date: Date; event: ExternalEvent };
+
+  const upcomingListItems = useMemo<UpcomingListItem[]>(() => {
+    const pingItems: UpcomingListItem[] = visibleEvents.map((e) => ({
+      kind: "ping",
+      key: `ping-${e.id}`,
+      date: new Date(e.event_date),
+      event: e,
+    }));
+
+    if (showDraftsOnly || showDeclinedOnly) return pingItems;
+
+    const dayFiltered = selectedDate
+      ? externalEvents.filter((e) => toDateKey(e.startDate) === selectedDate)
+      : externalEvents;
+
+    const externalItems: UpcomingListItem[] = dayFiltered.map((e) => ({
+      kind: "external",
+      key: `ext-${e.id}`,
+      date: e.startDate,
+      event: e,
+    }));
+
+    return [...pingItems, ...externalItems].sort(
+      (a, b) => a.date.getTime() - b.date.getTime(),
+    );
+  }, [visibleEvents, externalEvents, selectedDate, showDraftsOnly, showDeclinedOnly]);
+
   // The Message Board (unlike the date-sorted Upcoming list above it) reads
   // like a texting app's conversation list - most recently active thread
   // first, not soonest-upcoming first. Events with no messages yet fall
@@ -425,6 +495,7 @@ export default function HomeScreen() {
       return;
     }
     await fetchEvents();
+    if (calendarPermission === "granted") await fetchExternalEvents();
     if (isCompactMode) {
       await refreshLatestMessages(visibleEvents.map((e) => e.id));
     }
@@ -435,6 +506,8 @@ export default function HomeScreen() {
     refreshLatestGroupMessages,
     groups,
     fetchEvents,
+    calendarPermission,
+    fetchExternalEvents,
     refreshLatestMessages,
     visibleEvents,
   ]);
@@ -793,10 +866,22 @@ export default function HomeScreen() {
         >
           <View style={styles.handleSpacer} />
           {renderListHeader("Upcoming", true)}
+          {calendarPermission === "undetermined" &&
+            !showDraftsOnly &&
+            !showDeclinedOnly && (
+              <TouchableOpacity
+                style={styles.calendarPromptRow}
+                onPress={handleEnableExternalCalendar}
+              >
+                <Text style={styles.calendarPromptText}>
+                  📅 Show your phone calendar here too
+                </Text>
+              </TouchableOpacity>
+            )}
           <FlatList
             style={{ flex: 1 }}
-            data={visibleEvents}
-            keyExtractor={(item) => item.id}
+            data={upcomingListItems}
+            keyExtractor={(item) => item.key}
             extraData={myRsvpByEvent}
             refreshControl={
               <RefreshControl
@@ -805,14 +890,18 @@ export default function HomeScreen() {
                 tintColor={colors.primary}
               />
             }
-            renderItem={({ item }) => (
-              <EventCard
-                event={item}
-                highlight={item.id === justCreatedId}
-                onPress={openEvent}
-                rsvpStatus={myRsvpByEvent[item.id] as any}
-              />
-            )}
+            renderItem={({ item }) =>
+              item.kind === "ping" ? (
+                <EventCard
+                  event={item.event}
+                  highlight={item.event.id === justCreatedId}
+                  onPress={openEvent}
+                  rsvpStatus={myRsvpByEvent[item.event.id] as any}
+                />
+              ) : (
+                <ExternalEventRow event={item.event} />
+              )
+            }
             ListEmptyComponent={
               !loading ? (
                 <Text style={styles.emptyText}>{emptyText}</Text>
@@ -1006,6 +1095,8 @@ const styles = StyleSheet.create({
   backToCalendarButton: { flexShrink: 1, marginRight: 8 },
   pageTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: "700" },
   clearFilterText: { color: colors.primary, fontSize: 14, fontWeight: "600" },
+  calendarPromptRow: { marginHorizontal: 20, marginTop: 8 },
+  calendarPromptText: { color: colors.primaryDark, fontSize: 13 },
   emptyText: {
     color: colors.textMuted,
     textAlign: "center",
