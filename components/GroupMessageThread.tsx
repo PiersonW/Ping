@@ -42,7 +42,7 @@ export default function GroupMessageThread({ groupId }: Props) {
   const inputRef = useRef<TextInput>(null);
   const [sending, setSending] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [myMemberId, setMyMemberId] = useState<string | null>(null);
+  const [isMember, setIsMember] = useState(false);
   const [muted, setMuted] = useState(false);
   const listRef = useRef<FlatList>(null);
 
@@ -53,25 +53,31 @@ export default function GroupMessageThread({ groupId }: Props) {
 
   // Owners don't have their own group_members row (see recipient logic in
   // handleSend below), so muting is only offered to actual members for now.
+  // group_members has no surrogate id column - group_id + user_id together
+  // address a row, same as the healing update in handleSend below.
   useEffect(() => {
     if (!session?.user?.id) return;
     supabase
       .from('group_members')
-      .select('id, muted')
+      .select('muted')
       .eq('group_id', groupId)
       .eq('user_id', session.user.id)
       .maybeSingle()
       .then(({ data }) => {
-        setMyMemberId(data?.id || null);
+        setIsMember(!!data);
         setMuted(!!data?.muted);
       });
   }, [groupId, session?.user?.id]);
 
   const toggleMuted = async () => {
-    if (!myMemberId) return;
+    if (!isMember || !session?.user?.id) return;
     const next = !muted;
     setMuted(next);
-    const { error } = await supabase.from('group_members').update({ muted: next }).eq('id', myMemberId);
+    const { error } = await supabase
+      .from('group_members')
+      .update({ muted: next })
+      .eq('group_id', groupId)
+      .eq('user_id', session.user.id);
     if (error) {
       console.error('Error updating mute state:', error);
       setMuted(!next);
@@ -218,14 +224,22 @@ export default function GroupMessageThread({ groupId }: Props) {
       // signing up. Fetch everyone and re-resolve each one's link fresh
       // below instead, same self-healing idea as healContactLink for event
       // invites.
-      supabase.from('group_members').select('id, user_id, muted, contacts(linked_user_id)').eq('group_id', groupId),
+      // group_members has no surrogate id column - group_id + contact_id
+      // together are how a row is addressed (see toggleMember in
+      // app/groups/[id].tsx), so that's what the healing update below
+      // matches on too.
+      supabase.from('group_members').select('contact_id, user_id, muted, contacts(linked_user_id)').eq('group_id', groupId),
     ]);
 
     const healedMembers = await Promise.all(
       (memberRows || []).map(async (m: any) => {
         const resolvedUserId = m.user_id || m.contacts?.linked_user_id || null;
         if (resolvedUserId && resolvedUserId !== m.user_id) {
-          await supabase.from('group_members').update({ user_id: resolvedUserId }).eq('id', m.id);
+          await supabase
+            .from('group_members')
+            .update({ user_id: resolvedUserId })
+            .eq('group_id', groupId)
+            .eq('contact_id', m.contact_id);
         }
         return { ...m, user_id: resolvedUserId };
       })
@@ -257,7 +271,7 @@ export default function GroupMessageThread({ groupId }: Props) {
 
   return (
     <View style={{ flex: 1 }}>
-      {myMemberId && (
+      {isMember && (
         <TouchableOpacity onPress={toggleMuted} style={styles.muteRow}>
           <Text style={styles.muteText}>{muted ? '🔕 Muted' : '🔔 Mute'}</Text>
         </TouchableOpacity>
