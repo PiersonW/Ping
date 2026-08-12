@@ -145,6 +145,16 @@ export function useNotifications(userId?: string | null) {
     if (error) console.error('Error marking all notifications read:', error);
   }, [notifications]);
 
+  // Optimistic removal with no rollback on failure (unlike markRead/
+  // markAllRead) - a swipe-to-delete that silently reappears after a beat
+  // reads as broken, and a failed delete just means it comes back on the
+  // next refresh instead, which is a much smaller papercut.
+  const deleteNotification = useCallback(async (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    const { error } = await supabase.from('notifications').delete().eq('id', id);
+    if (error) console.error('Error deleting notification:', error);
+  }, []);
+
   const unreadCount = notifications.filter((n) => !n.read_at).length + pendingInvites.length;
 
   // Pushes carry their own badge number (see supabase/functions/send-push),
@@ -173,5 +183,14 @@ export function useNotifications(userId?: string | null) {
     };
   }, [userId, unreadCount]);
 
-  return { notifications, pendingInvites, unreadCount, loading, refresh: fetchAll, markRead, markAllRead };
+  return {
+    notifications,
+    pendingInvites,
+    unreadCount,
+    loading,
+    refresh: fetchAll,
+    markRead,
+    markAllRead,
+    deleteNotification,
+  };
 }

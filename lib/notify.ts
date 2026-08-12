@@ -19,6 +19,23 @@ type NotifyOptions = {
   silent?: boolean;
 };
 
+// A recipient only ever plays one role on a given event - the guest side
+// (invite, event_updated) and the host side (rsvp_update, item_claimed)
+// never both land on the same person for the same event, since you can't be
+// your own guest - so bucketing all four together still only ever merges
+// "your" activity on that event into one row, not someone else's unrelated
+// update. Message threads stay in their own bucket: a chat is a different
+// kind of thing than "news about this event" and shouldn't bump one off the
+// notification, or vice versa.
+const NOTIF_GROUP: Partial<Record<NotificationType, string>> = {
+  invite: 'event_activity',
+  event_updated: 'event_activity',
+  rsvp_update: 'event_activity',
+  item_claimed: 'event_activity',
+  message: 'message',
+  group_message: 'message',
+};
+
 export async function notify(
   userIds: (string | null | undefined)[],
   title: string,
@@ -28,18 +45,19 @@ export async function notify(
   const ids = Array.from(new Set(userIds.filter(Boolean))) as string[];
   if (ids.length === 0) return;
 
-  const CONSOLIDATED_TYPES: NotificationType[] = ['message', 'group_message', 'rsvp_update', 'event_updated'];
-  if (opts?.type && CONSOLIDATED_TYPES.includes(opts.type)) {
-    // Chat messages arrive in bursts, and someone can flip their RSVP
-    // several times before the event - collapse repeats into a single
-    // row per recipient/event (or group), updated and bumped back to
-    // unread each time, instead of piling up one notification per change -
-    // same as how a phone shows one thread for several texts in a row
-    // rather than a line per text.
+  const notifGroup = opts?.type ? NOTIF_GROUP[opts.type] : undefined;
+  if (opts?.type && notifGroup) {
+    // Chat messages arrive in bursts, someone can flip their RSVP several
+    // times before the event, and an invite is just the first entry in
+    // that same event's story - collapse all of a recipient's activity for
+    // one event (or one group's messages) into a single row, updated and
+    // bumped back to unread each time, instead of piling up a new
+    // notification per change - same as how a phone shows one thread for
+    // several texts in a row rather than a line per text.
     const type = opts.type;
     const eventId = opts.eventId ?? null;
     const groupId = opts.groupId ?? null;
-    await Promise.all(ids.map((id) => consolidateNotification(id, type, eventId, groupId, title, body)));
+    await Promise.all(ids.map((id) => consolidateNotification(id, notifGroup, type, eventId, groupId, title, body)));
   } else if (opts?.type) {
     const { error } = await supabase.from('notifications').insert(
       ids.map((id) => ({
@@ -68,6 +86,7 @@ export async function notify(
 
 async function consolidateNotification(
   recipientId: string,
+  notifGroup: string,
   type: NotificationType,
   eventId: string | null,
   groupId: string | null,
@@ -80,11 +99,15 @@ async function consolidateNotification(
   // committed, so both saw "no existing row" and both inserted - producing
   // exactly the duplicate lines this is supposed to prevent. thread_key
   // (event_id or group_id, always non-null for these consolidated types)
-  // backs a real unique index, so this upsert is atomic at the database
-  // level instead of racy round-trips from the client.
+  // plus notif_group (which types share one merged row - see NOTIF_GROUP
+  // above) backs a real unique index, so this upsert is atomic at the
+  // database level instead of racy round-trips from the client. `type` is
+  // still stored (and still overwritten each time) purely for display/
+  // routing - it's not part of what identifies "the same row" anymore.
   const { error } = await supabase.from('notifications').upsert(
     {
       recipient_id: recipientId,
+      notif_group: notifGroup,
       type,
       event_id: eventId,
       group_id: groupId,
@@ -94,7 +117,7 @@ async function consolidateNotification(
       created_at: new Date().toISOString(),
       read_at: null,
     },
-    { onConflict: 'recipient_id,type,thread_key' }
+    { onConflict: 'recipient_id,notif_group,thread_key' }
   );
   if (error) console.error('Error upserting notification:', error);
 }

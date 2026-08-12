@@ -59,6 +59,7 @@ const NotificationsContext = createContext<NotificationsContextType>({
   refresh: noopAsync,
   markRead: noopAsync,
   markAllRead: noopAsync,
+  deleteNotification: noopAsync,
   popupEventId: null,
   openInvitePopup: () => {},
   closeInvitePopup: () => {},

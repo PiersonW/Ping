@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { Animated, View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { colors } from '../lib/theme';
 import { useNotificationsContext } from '../lib/NotificationsContext';
@@ -7,9 +8,25 @@ import { NotificationRow as NotificationRowData } from '../lib/useNotifications'
 import CompactEventRow from '../components/CompactEventRow';
 import NotificationRow from '../components/NotificationRow';
 
+// Slides in from behind the row as it's dragged (dragX starts near 0 and
+// grows negative while swiping left) rather than just popping into place at
+// full size once the reveal threshold is crossed.
+const renderDeleteAction = (dragX: Animated.AnimatedInterpolation<number>, onPress: () => void) => {
+  const scale = dragX.interpolate({
+    inputRange: [-80, 0],
+    outputRange: [1, 0.5],
+    extrapolate: 'clamp',
+  });
+  return (
+    <TouchableOpacity style={styles.deleteAction} onPress={onPress}>
+      <Animated.Text style={[styles.deleteActionText, { transform: [{ scale }] }]}>Delete</Animated.Text>
+    </TouchableOpacity>
+  );
+};
+
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { notifications, pendingInvites, loading, refresh, markRead, markAllRead, openEventModal } =
+  const { notifications, pendingInvites, loading, refresh, markRead, markAllRead, deleteNotification, openEventModal } =
     useNotificationsContext();
 
   useFocusEffect(
@@ -90,7 +107,14 @@ export default function NotificationsScreen() {
                 )}
               </View>
               {notifications.map((n) => (
-                <NotificationRow key={n.id} notification={n} onPress={openNotification} />
+                <Swipeable
+                  key={n.id}
+                  renderRightActions={(_, dragX) => renderDeleteAction(dragX, () => deleteNotification(n.id))}
+                  overshootRight={false}
+                  rightThreshold={40}
+                >
+                  <NotificationRow notification={n} onPress={openNotification} />
+                </Swipeable>
               ))}
             </View>
           )}
@@ -128,4 +152,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   markAllText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
+  deleteAction: {
+    width: 80,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteActionText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
 });
