@@ -553,7 +553,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
           console.error('Error creating invitees:', inviteeError);
         } else {
           const notifiableUserIds = rows.map((r) => r.user_id).filter(Boolean);
-          notify(notifiableUserIds, "You're invited! 🎉", `${title} — tap to view and RSVP`, {
+          await notify(notifiableUserIds, "You're invited! 🎉", `${title} — tap to view and RSVP`, {
             eventId: eventRow.id,
             type: 'invite',
           });

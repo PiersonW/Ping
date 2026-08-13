@@ -215,12 +215,25 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
   const handleSetReminder = async (minutesBefore: number | null) => {
     if (!myInvitee || !event || !session?.user?.id) return;
 
+    // Optimistic update - the button should flip the instant you tap it,
+    // not wait on a network round-trip and then a full fetchData() re-fetch
+    // of the entire event (all invitees, all items) just to reflect one
+    // field changing on one invitee.
+    const previousValue = myInvitee.reminder_minutes_before;
+    const inviteeId = myInvitee.id;
+    setInvitees((prev) =>
+      prev.map((inv) => (inv.id === inviteeId ? { ...inv, reminder_minutes_before: minutesBefore } : inv))
+    );
+
     const { error } = await supabase
       .from('invitees')
       .update({ reminder_minutes_before: minutesBefore })
-      .eq('id', myInvitee.id);
+      .eq('id', inviteeId);
     if (error) {
       console.error('Error updating reminder:', error);
+      setInvitees((prev) =>
+        prev.map((inv) => (inv.id === inviteeId ? { ...inv, reminder_minutes_before: previousValue } : inv))
+      );
       return;
     }
 
@@ -229,8 +242,6 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
     } else {
       await scheduleEventReminder(session.user.id, event.id, event.title, new Date(event.event_date), minutesBefore);
     }
-
-    await fetchData();
   };
 
   const handleAddItem = async () => {
@@ -323,7 +334,7 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
     }
 
     if (nextQty > prevQty && !isHost && event?.host_id) {
-      notify([event.host_id], 'Item claimed', `${myName()} claimed "${item.name}" for ${event.title}`, {
+      await notify([event.host_id], 'Item claimed', `${myName()} claimed "${item.name}" for ${event.title}`, {
         eventId,
         type: 'item_claimed',
       });

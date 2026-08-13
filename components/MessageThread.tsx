@@ -18,6 +18,7 @@ import { notify } from '../lib/notify';
 import { displayName } from '../lib/displayName';
 import { useMessageReactions } from '../lib/useMessageReactions';
 import ReactionPicker from './ReactionPicker';
+import MessageBubble, { BubbleAnchor } from './MessageBubble';
 
 const PAGE_SIZE = 30;
 
@@ -55,6 +56,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
   const [muted, setMuted] = useState(false);
   const listRef = useRef<FlatList>(null);
   const [reactingToId, setReactingToId] = useState<string | null>(null);
+  const [pickerAnchor, setPickerAnchor] = useState<BubbleAnchor | null>(null);
   const { reactionsByMessage, fetchForIds, toggleReaction } = useMessageReactions(
     'message_id',
     session?.user?.id
@@ -252,8 +254,8 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     const notifTitle = eventRow?.title ? `New message — ${eventRow.title}` : 'New message';
     const notifBody = `${senderDisplayName}: ${body}`;
 
-    notify(recipientIds, notifTitle, notifBody, { eventId, type: 'message' });
-    notify(mutedRecipientIds, notifTitle, notifBody, { eventId, type: 'message', silent: true });
+    await notify(recipientIds, notifTitle, notifBody, { eventId, type: 'message' });
+    await notify(mutedRecipientIds, notifTitle, notifBody, { eventId, type: 'message', silent: true });
   };
 
   return (
@@ -292,42 +294,23 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
           }
           renderItem={({ item }) => {
             const isMine = item.sender_id === session?.user?.id;
-            const reactions = reactionsByMessage[item.id] || [];
             return (
-              <View style={[styles.bubbleRow, isMine && styles.bubbleRowMine]}>
-                <View>
-                  <TouchableOpacity
-                    style={[styles.bubble, isMine && styles.bubbleMine]}
-                    activeOpacity={0.85}
-                    onLongPress={() => setReactingToId(item.id)}
-                  >
-                    {!isMine && <Text style={styles.senderName}>{senderName(item)}</Text>}
-                    <Text style={[styles.bubbleText, isMine && styles.bubbleTextMine]}>{item.body}</Text>
-                    <Text style={[styles.timestamp, isMine && styles.timestampMine]}>
-                      {new Date(item.created_at).toLocaleTimeString(undefined, {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </Text>
-                  </TouchableOpacity>
-                  {reactions.length > 0 && (
-                    <View style={[styles.reactionRow, isMine && styles.reactionRowMine]}>
-                      {reactions.map((r) => (
-                        <TouchableOpacity
-                          key={r.emoji}
-                          style={[styles.reactionPill, r.mine && styles.reactionPillMine]}
-                          onPress={() => toggleReaction(item.id, r.emoji)}
-                        >
-                          <Text style={styles.reactionPillText}>
-                            {r.emoji}
-                            {r.count > 1 ? ` ${r.count}` : ''}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              </View>
+              <MessageBubble
+                isMine={isMine}
+                senderLabel={!isMine ? senderName(item) : undefined}
+                body={item.body}
+                timestamp={new Date(item.created_at).toLocaleTimeString(undefined, {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+                reactions={reactionsByMessage[item.id] || []}
+                isActive={reactingToId === item.id}
+                onToggleReaction={(emoji) => toggleReaction(item.id, emoji)}
+                onLongPressBubble={(anchor) => {
+                  setReactingToId(item.id);
+                  setPickerAnchor(anchor);
+                }}
+              />
             );
           }}
           ListEmptyComponent={
@@ -367,7 +350,11 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
 
       <ReactionPicker
         visible={!!reactingToId}
-        onClose={() => setReactingToId(null)}
+        anchor={pickerAnchor}
+        onClose={() => {
+          setReactingToId(null);
+          setPickerAnchor(null);
+        }}
         onSelect={(emoji) => {
           if (reactingToId) toggleReaction(reactingToId, emoji);
         }}
@@ -384,36 +371,6 @@ const styles = StyleSheet.create({
   header: { color: colors.textPrimary, fontSize: 20, fontWeight: '700', marginBottom: 12 },
   emptyText: { color: colors.textMuted, textAlign: 'center', marginTop: 40, fontSize: 15 },
   endOfThreadText: { color: colors.textMuted, textAlign: 'center', fontSize: 12, marginVertical: 12 },
-  bubbleRow: { flexDirection: 'row', marginBottom: 10 },
-  bubbleRowMine: { justifyContent: 'flex-end' },
-  bubble: {
-    maxWidth: '78%',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  bubbleMine: { backgroundColor: colors.primary, borderColor: colors.primary },
-  senderName: { color: colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 2 },
-  bubbleText: { color: colors.textPrimary, fontSize: 15 },
-  bubbleTextMine: { color: colors.textOnPrimary },
-  timestamp: { color: colors.textMuted, fontSize: 10, marginTop: 4, textAlign: 'right' },
-  timestampMine: { color: 'rgba(255,255,255,0.75)' },
-  reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
-  reactionRowMine: { justifyContent: 'flex-end' },
-  reactionPill: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  reactionPillMine: { borderColor: colors.primary, backgroundColor: colors.primaryPale },
-  reactionPillText: { fontSize: 13, color: colors.textPrimary },
   inputRow: {
     flexDirection: 'row',
     gap: 8,

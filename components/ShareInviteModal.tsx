@@ -177,7 +177,7 @@ export default function ShareInviteModal({
     }
 
     const notifiableUserIds = rows.map((r) => r.user_id).filter(Boolean);
-    notify(notifiableUserIds, "You're invited! 🎉", `${eventTitle || 'An event'} — tap to view and RSVP`, {
+    await notify(notifiableUserIds, "You're invited! 🎉", `${eventTitle || 'An event'} — tap to view and RSVP`, {
       eventId,
       type: 'invite',
     });

@@ -51,7 +51,7 @@ export async function submitRsvp(opts: SubmitRsvpOptions): Promise<string | null
 
   if (hostId && hostId !== userId) {
     const statusLabel = status === 'accepted' ? 'accepted' : status === 'declined' ? 'declined' : 'is interested in';
-    notify([hostId], 'RSVP update', `${responderName} ${statusLabel} ${eventTitle}`, {
+    await notify([hostId], 'RSVP update', `${responderName} ${statusLabel} ${eventTitle}`, {
       eventId,
       type: 'rsvp_update',
     });

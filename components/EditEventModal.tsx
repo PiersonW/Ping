@@ -640,7 +640,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
         .map((i) => i.user_id)
         .filter((id): id is string => !!id && id !== session.user.id);
       if (recipientIds.length > 0) {
-        notify(recipientIds, `${title} was updated`, "The host changed this event's details — take a look.", {
+        await notify(recipientIds, `${title} was updated`, "The host changed this event's details — take a look.", {
           eventId: event.id,
           type: 'event_updated',
         });
@@ -697,7 +697,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
           console.error('Error creating invitees:', inviteeError);
         } else {
           const notifiableUserIds = rows.map((r) => r.user_id).filter(Boolean);
-          notify(notifiableUserIds, "You're invited! 🎉", `${title} — tap to view and RSVP`, {
+          await notify(notifiableUserIds, "You're invited! 🎉", `${title} — tap to view and RSVP`, {
             eventId: event.id,
             type: 'invite',
           });
@@ -741,7 +741,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
               .map((i) => i.user_id)
               .filter((id): id is string => !!id && id !== session?.user?.id);
             if (recipientIds.length > 0) {
-              notify(recipientIds, 'Event canceled', `"${title}" has been canceled.`, {
+              await notify(recipientIds, 'Event canceled', `"${title}" has been canceled.`, {
                 eventId: event.id,
                 type: 'event_canceled',
               });
