@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
-import { colors } from '../lib/theme';
+import { colors, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
 import { formatEventDate, formatEventTime } from '../lib/eventDate';
 
 export type PingEvent = {
@@ -34,7 +34,7 @@ type Props = {
 export default function EventCard({ event, onPress, highlight, rsvpStatus }: Props) {
   const rsvpDotColor = rsvpStatus && rsvpStatus !== 'pending' ? RSVP_DOT_COLOR[rsvpStatus] : null;
   const dateLabel = formatEventDate(event.event_date, event.end_date, 'short');
-  const timeLabel = formatEventTime(event.event_date, event.is_all_day);
+  const timeLabel = formatEventTime(event.event_date, event.is_all_day, event.end_date);
 
   return (
     <TouchableOpacity
@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.surfaceLight,
   },
-  image: { width: '100%', height: 140, borderRadius: 12, marginBottom: 10 },
+  image: { width: '100%', aspectRatio: EVENT_IMAGE_ASPECT_RATIO, borderRadius: 12, marginBottom: 10 },
   title: { color: colors.textPrimary, fontSize: 18, fontWeight: '800', marginBottom: 6 },
   statBar: { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 6, gap: 2 },
   statText: { color: colors.textSecondary, fontSize: 13 },

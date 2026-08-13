@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
-import { colors } from '../lib/theme';
+import { colors, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
 import { displayName } from '../lib/displayName';
 import { submitRsvp } from '../lib/rsvp';
 import { formatEventDate, formatEventTime } from '../lib/eventDate';
@@ -152,7 +152,7 @@ export default function InvitePopup({ eventId, onClose, onOpenFull }: Props) {
   if (!eventId) return null;
 
   const dateLabel = event ? formatEventDate(event.event_date, event.end_date, 'long') : '';
-  const timeLabel = event ? formatEventTime(event.event_date, event.is_all_day) : '';
+  const timeLabel = event ? formatEventTime(event.event_date, event.is_all_day, event.end_date) : '';
 
   return (
     <Modal visible={!!eventId} transparent animationType="fade" onRequestClose={onClose}>
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
   },
   closeButton: { position: 'absolute', top: 14, right: 14, zIndex: 1 },
   closeButtonText: { fontSize: 18, color: colors.textMuted },
-  image: { width: '100%', height: 140, borderRadius: 14, marginBottom: 14 },
+  image: { width: '100%', aspectRatio: EVENT_IMAGE_ASPECT_RATIO, borderRadius: 14, marginBottom: 14 },
   inviter: { fontSize: 14, color: colors.textSecondary, marginBottom: 4 },
   title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
   detail: { fontSize: 15, color: colors.textSecondary, marginBottom: 2 },

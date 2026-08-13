@@ -1,7 +1,7 @@
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
-async function pickImage(aspect: [number, number]): Promise<string | null> {
+async function pickImage(allowsEditing: boolean, aspect?: [number, number]): Promise<string | null> {
   return new Promise((resolve) => {
     Alert.alert(
       'Add Photo',
@@ -17,7 +17,7 @@ async function pickImage(aspect: [number, number]): Promise<string | null> {
               return;
             }
             const result = await ImagePicker.launchCameraAsync({
-              allowsEditing: true,
+              allowsEditing,
               aspect,
               quality: 0.8,
             });
@@ -35,7 +35,7 @@ async function pickImage(aspect: [number, number]): Promise<string | null> {
             }
             const result = await ImagePicker.launchImageLibraryAsync({
               mediaTypes: ImagePicker.MediaTypeOptions.Images,
-              allowsEditing: true,
+              allowsEditing,
               aspect,
               quality: 0.8,
             });
@@ -49,10 +49,14 @@ async function pickImage(aspect: [number, number]): Promise<string | null> {
   });
 }
 
+// No OS-level crop here (unlike the profile picker below) - the raw pick
+// goes through ImageCropModal instead, which is also how re-cropping an
+// already-selected photo works (that flow has no "picking" step at all, so
+// it could never have gone through the OS crop anyway).
 export async function pickEventImage(): Promise<string | null> {
-  return pickImage([4, 3]);
+  return pickImage(false);
 }
 
 export async function pickProfileImage(): Promise<string | null> {
-  return pickImage([1, 1]);
+  return pickImage(true, [1, 1]);
 }

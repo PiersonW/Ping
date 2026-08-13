@@ -25,9 +25,11 @@ import { loadMemberGroups } from '../lib/sharedGroups';
 import { sendSmsInvites } from '../lib/sms';
 import { uploadEventImage } from '../lib/imageUpload';
 import { pickEventImage } from '../lib/imagePicker';
-import { colors, cardFrameGradient, calendarTheme } from '../lib/theme';
+import { colors, cardFrameGradient, calendarTheme, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
+import { isMultiDayEvent } from '../lib/eventDate';
 import { notify } from '../lib/notify';
 import ImportContactsModal from './ImportContactsModal';
+import ImageCropModal from './ImageCropModal';
 
 type Contact = {
   id: string;
@@ -82,6 +84,8 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [cropModalVisible, setCropModalVisible] = useState(false);
+  const [cropSourceUri, setCropSourceUri] = useState<string | null>(null);
 
   const isDraft = event?.status === 'draft';
 
@@ -161,8 +165,15 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       setDescription(event.description || '');
       setLocation(event.location || '');
       setEventDate(new Date(event.event_date));
-      setEndDate(event.end_date ? new Date(event.end_date) : null);
-      setIsMultiDay(!!event.end_date);
+      setEndDate(
+        event.end_date
+          ? new Date(event.end_date)
+          : new Date(new Date(event.event_date).getTime() + 60 * 60000)
+      );
+      // Events saved before this had an explicit end time all have
+      // end_date === null - only a real, different-day end_date means it
+      // was actually set up as spanning multiple days.
+      setIsMultiDay(isMultiDayEvent(event.event_date, event.end_date));
       setIsAllDay(!!event.is_all_day);
       setIsPublic(event.is_public);
       setImageUri(null);
@@ -341,9 +352,32 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
     return result;
   };
 
-  const pickImage = async () => {
+  const startCrop = (uri: string) => {
+    setCropSourceUri(uri);
+    setCropModalVisible(true);
+  };
+
+  // A photo already attached (whether a fresh local pick or the event's
+  // already-uploaded one) gets a choice to just reframe it in place instead
+  // of always forcing a fresh trip through the library.
+  const handlePhotoTap = async () => {
+    const currentUri = imageUri || existingImageUrl;
+    if (currentUri) {
+      Alert.alert('Photo', undefined, [
+        { text: 'Recrop This Photo', onPress: () => startCrop(currentUri) },
+        {
+          text: 'Choose a Different Photo',
+          onPress: async () => {
+            const uri = await pickEventImage();
+            if (uri) startCrop(uri);
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
     const uri = await pickEventImage();
-    if (uri) setImageUri(uri);
+    if (uri) startCrop(uri);
   };
 
   const toggleContact = (id: string) => {
@@ -412,7 +446,17 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
 
   const onChangeDate = (e: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') setShowPicker(false);
-    if (selectedDate) setEventDate(selectedDate);
+    if (!selectedDate) return;
+    if (pickerTarget === 'end') {
+      setEndDate(selectedDate);
+      return;
+    }
+    setEventDate(selectedDate);
+    // Keep the end time from silently trailing behind a start time that
+    // just got moved past it - same idea as the end-date safeguard below.
+    if (endDate && endDate.getTime() <= selectedDate.getTime()) {
+      setEndDate(new Date(selectedDate.getTime() + 60 * 60000));
+    }
   };
 
   const toDateString = (date: Date) => {
@@ -442,8 +486,14 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   const toggleMultiDay = () => {
     setIsMultiDay((prev) => {
       const next = !prev;
-      if (next && !endDate) setEndDate(eventDate);
-      if (!next) setEndDate(null);
+      // Turning it off collapses the end back onto the start's day rather
+      // than discarding it - there's always an end time now, multi-day
+      // just controls whether that end can land on a different day.
+      if (!next && endDate) {
+        const collapsed = new Date(eventDate);
+        collapsed.setHours(endDate.getHours(), endDate.getMinutes(), 0, 0);
+        setEndDate(collapsed);
+      }
       return next;
     });
   };
@@ -530,7 +580,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       description: description.trim() || null,
       location,
       event_date: eventDate.toISOString(),
-      end_date: isMultiDay && endDate ? endDate.toISOString() : null,
+      end_date: endDate ? endDate.toISOString() : null,
       is_all_day: isAllDay,
       is_public: isPublic,
       image_url: imageUrl,
@@ -723,7 +773,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
           >
             <Text style={styles.header}>{isDraft ? 'Finish Draft' : 'Edit Event'}</Text>
 
-            <TouchableOpacity onPress={pickImage} activeOpacity={0.85}>
+            <TouchableOpacity onPress={handlePhotoTap} activeOpacity={0.85}>
               <LinearGradient colors={cardFrameGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.imageFrame}>
                 {imageUri || existingImageUrl ? (
                   <>
@@ -778,15 +828,28 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
               )}
             </View>
 
-            {isMultiDay && (
-              <View style={[styles.row, { marginTop: 8 }]}>
-                <TouchableOpacity
-                  style={styles.pillButton}
-                  onPress={() => { setPickerMode('date'); setPickerTarget('end'); setShowPicker(true); }}
-                >
-                  <Text style={styles.pillButtonText}>Ends {formatDate(endDate || eventDate)}</Text>
-                </TouchableOpacity>
-              </View>
+            {(isMultiDay || !isAllDay) && (
+              <>
+                <Text style={styles.sublabel}>Ends</Text>
+                <View style={styles.row}>
+                  {isMultiDay && (
+                    <TouchableOpacity
+                      style={styles.pillButton}
+                      onPress={() => { setPickerMode('date'); setPickerTarget('end'); setShowPicker(true); }}
+                    >
+                      <Text style={styles.pillButtonText}>{formatDate(endDate || eventDate)}</Text>
+                    </TouchableOpacity>
+                  )}
+                  {!isAllDay && (
+                    <TouchableOpacity
+                      style={styles.pillButton}
+                      onPress={() => { setPickerMode('time'); setPickerTarget('end'); setShowPicker(true); }}
+                    >
+                      <Text style={styles.pillButtonText}>{formatTime(endDate || eventDate)}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
             )}
 
             {showPicker && pickerMode === 'date' && (
@@ -809,7 +872,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
 
             {showPicker && pickerMode === 'time' && (
               <DateTimePicker
-                value={eventDate}
+                value={pickerTarget === 'end' ? endDate || eventDate : eventDate}
                 mode="time"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={onChangeDate}
@@ -1099,6 +1162,16 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       </KeyboardAvoidingView>
 
       <ImportContactsModal visible={importVisible} onClose={() => setImportVisible(false)} onImported={handleImported} />
+
+      <ImageCropModal
+        visible={cropModalVisible}
+        uri={cropSourceUri}
+        onCancel={() => setCropModalVisible(false)}
+        onCropped={(uri) => {
+          setImageUri(uri);
+          setCropModalVisible(false);
+        }}
+      />
     </Modal>
   );
 }
@@ -1110,7 +1183,7 @@ const styles = StyleSheet.create({
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center' },
   header: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: 16 },
   imageFrame: { borderRadius: 18, padding: 3, marginBottom: 16 },
-  image: { width: '100%', height: 160, borderRadius: 15 },
+  image: { width: '100%', aspectRatio: EVENT_IMAGE_ASPECT_RATIO, borderRadius: 15 },
   imagePlaceholder: { backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   imagePlaceholderIcon: { fontSize: 32, marginBottom: 6 },
   imagePlaceholderText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },

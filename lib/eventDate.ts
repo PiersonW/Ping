@@ -40,9 +40,15 @@ export function formatEventDate(
   return `${startLabel} – ${endLabel}`;
 }
 
-export function formatEventTime(eventDate: string, isAllDay?: boolean | null): string {
+export function formatEventTime(eventDate: string, isAllDay?: boolean | null, endDate?: string | null): string {
   if (isAllDay) return 'All day';
-  return new Date(eventDate).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const startLabel = new Date(eventDate).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  // A multi-day span already shows its date range via formatEventDate -
+  // pairing that with the end date's bare time (no date attached) would
+  // read as if it ends today, so only show a time range within one day.
+  if (!endDate || isMultiDayEvent(eventDate, endDate)) return startLabel;
+  const endLabel = new Date(endDate).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return `${startLabel} – ${endLabel}`;
 }
 
 // Every YYYY-MM-DD key from start to end (inclusive) - used to shade each

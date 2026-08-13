@@ -18,7 +18,7 @@ import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import ShareInviteModal from './ShareInviteModal';
 import EditEventModal, { EditableEvent } from './EditEventModal';
-import { colors, cardFrameGradient } from '../lib/theme';
+import { colors, cardFrameGradient, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
 import { notify } from '../lib/notify';
 import { submitRsvp, RsvpStatus } from '../lib/rsvp';
 import { scheduleEventReminder, cancelEventReminder } from '../lib/eventReminders';
@@ -346,7 +346,7 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
   }
 
   const dateLabel = formatEventDate(event.event_date, event.end_date, 'long');
-  const timeLabel = formatEventTime(event.event_date, event.is_all_day);
+  const timeLabel = formatEventTime(event.event_date, event.is_all_day, event.end_date);
 
   const counts = invitees.reduce(
     (acc, inv) => {
@@ -408,7 +408,7 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
           <View style={styles.hostRow}>
             <Avatar url={hostProfile.avatar_url} name={displayName(hostProfile)} size={22} />
             <Text style={styles.hostText}>
-              Hosted by {isHost ? 'you' : displayName(hostProfile)}
+              Added by {isHost ? 'you' : displayName(hostProfile)}
             </Text>
           </View>
         )}
@@ -723,7 +723,7 @@ const styles = StyleSheet.create({
   draftBanner: { backgroundColor: colors.surfaceAlt, borderRadius: 10, padding: 12, marginBottom: 14 },
   draftBannerText: { color: colors.textSecondary, fontSize: 13 },
   imageFrame: { borderRadius: 18, padding: 3, marginBottom: 14 },
-  image: { width: '100%', height: 180, borderRadius: 15 },
+  image: { width: '100%', aspectRatio: EVENT_IMAGE_ASPECT_RATIO, borderRadius: 15 },
   title: { color: colors.textPrimary, fontSize: 26, fontWeight: '700', marginBottom: 8 },
   meta: { color: colors.textSecondary, fontSize: 15, marginBottom: 2 },
   description: { color: colors.textPrimary, fontSize: 15, lineHeight: 21, marginTop: 10 },

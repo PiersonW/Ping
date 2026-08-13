@@ -25,9 +25,10 @@ import { loadMemberGroups } from '../lib/sharedGroups';
 import { sendSmsInvites } from '../lib/sms';
 import { uploadEventImage } from '../lib/imageUpload';
 import { pickEventImage } from '../lib/imagePicker';
-import { colors, cardFrameGradient, calendarTheme } from '../lib/theme';
+import { colors, cardFrameGradient, calendarTheme, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
 import { notify } from '../lib/notify';
 import ImportContactsModal from './ImportContactsModal';
+import ImageCropModal from './ImageCropModal';
 
 type Contact = {
   id: string;
@@ -65,6 +66,8 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   const [submitting, setSubmitting] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [cropModalVisible, setCropModalVisible] = useState(false);
+  const [cropSourceUri, setCropSourceUri] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -216,9 +219,31 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
     setGroupsLoading(false);
   };
 
-  const pickImage = async () => {
+  const startCrop = (uri: string) => {
+    setCropSourceUri(uri);
+    setCropModalVisible(true);
+  };
+
+  // A photo already attached gets a choice to just reframe it in place
+  // (no picking involved, so the original crop tool never even comes up)
+  // instead of always forcing a fresh trip through the library.
+  const handlePhotoTap = async () => {
+    if (imageUri) {
+      Alert.alert('Photo', undefined, [
+        { text: 'Recrop This Photo', onPress: () => startCrop(imageUri) },
+        {
+          text: 'Choose a Different Photo',
+          onPress: async () => {
+            const uri = await pickEventImage();
+            if (uri) startCrop(uri);
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
     const uri = await pickEventImage();
-    if (uri) setImageUri(uri);
+    if (uri) startCrop(uri);
   };
 
   const toggleContact = (id: string) => {
@@ -307,8 +332,9 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
     setTitle('');
     setDescription('');
     setLocation('');
-    setEventDate(buildInitialEventDate());
-    setEndDate(null);
+    const initial = buildInitialEventDate();
+    setEventDate(initial);
+    setEndDate(new Date(initial.getTime() + 60 * 60000));
     setIsMultiDay(false);
     setIsAllDay(false);
     setSelectedContactIds([]);
@@ -328,7 +354,17 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
 
   const onChangeDate = (event: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') setShowPicker(false);
-    if (selectedDate) setEventDate(selectedDate);
+    if (!selectedDate) return;
+    if (pickerTarget === 'end') {
+      setEndDate(selectedDate);
+      return;
+    }
+    setEventDate(selectedDate);
+    // Keep the end time from silently trailing behind a start time that
+    // just got moved past it - same idea as the end-date safeguard below.
+    if (endDate && endDate.getTime() <= selectedDate.getTime()) {
+      setEndDate(new Date(selectedDate.getTime() + 60 * 60000));
+    }
   };
 
   const toDateString = (date: Date) => {
@@ -358,8 +394,14 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   const toggleMultiDay = () => {
     setIsMultiDay((prev) => {
       const next = !prev;
-      if (next && !endDate) setEndDate(eventDate);
-      if (!next) setEndDate(null);
+      // Turning it off collapses the end back onto the start's day rather
+      // than discarding it - there's always an end time now, multi-day
+      // just controls whether that end can land on a different day.
+      if (!next && endDate) {
+        const collapsed = new Date(eventDate);
+        collapsed.setHours(endDate.getHours(), endDate.getMinutes(), 0, 0);
+        setEndDate(collapsed);
+      }
       return next;
     });
   };
@@ -417,7 +459,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
           description: description.trim() || null,
           location,
           event_date: eventDate.toISOString(),
-          end_date: isMultiDay && endDate ? endDate.toISOString() : null,
+          end_date: endDate ? endDate.toISOString() : null,
           is_all_day: isAllDay,
           status,
           host_id: session.user.id,
@@ -528,7 +570,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
           >
             <Text style={styles.header}>Create a Ping</Text>
 
-            <TouchableOpacity onPress={pickImage} activeOpacity={0.85}>
+            <TouchableOpacity onPress={handlePhotoTap} activeOpacity={0.85}>
               <LinearGradient colors={cardFrameGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.imageFrame}>
                 {imageUri ? (
                   <>
@@ -583,15 +625,28 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
               )}
             </View>
 
-            {isMultiDay && (
-              <View style={[styles.row, { marginTop: 8 }]}>
-                <TouchableOpacity
-                  style={styles.pillButton}
-                  onPress={() => { setPickerMode('date'); setPickerTarget('end'); setShowPicker(true); }}
-                >
-                  <Text style={styles.pillButtonText}>Ends {formatDate(endDate || eventDate)}</Text>
-                </TouchableOpacity>
-              </View>
+            {(isMultiDay || !isAllDay) && (
+              <>
+                <Text style={styles.sublabel}>Ends</Text>
+                <View style={styles.row}>
+                  {isMultiDay && (
+                    <TouchableOpacity
+                      style={styles.pillButton}
+                      onPress={() => { setPickerMode('date'); setPickerTarget('end'); setShowPicker(true); }}
+                    >
+                      <Text style={styles.pillButtonText}>{formatDate(endDate || eventDate)}</Text>
+                    </TouchableOpacity>
+                  )}
+                  {!isAllDay && (
+                    <TouchableOpacity
+                      style={styles.pillButton}
+                      onPress={() => { setPickerMode('time'); setPickerTarget('end'); setShowPicker(true); }}
+                    >
+                      <Text style={styles.pillButtonText}>{formatTime(endDate || eventDate)}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
             )}
 
             {showPicker && pickerMode === 'date' && (
@@ -614,7 +669,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
 
             {showPicker && pickerMode === 'time' && (
               <DateTimePicker
-                value={eventDate}
+                value={pickerTarget === 'end' ? endDate || eventDate : eventDate}
                 mode="time"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={onChangeDate}
@@ -875,6 +930,16 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
       </KeyboardAvoidingView>
 
       <ImportContactsModal visible={importVisible} onClose={() => setImportVisible(false)} onImported={handleImported} />
+
+      <ImageCropModal
+        visible={cropModalVisible}
+        uri={cropSourceUri}
+        onCancel={() => setCropModalVisible(false)}
+        onCropped={(uri) => {
+          setImageUri(uri);
+          setCropModalVisible(false);
+        }}
+      />
     </Modal>
   );
 }
@@ -886,7 +951,7 @@ const styles = StyleSheet.create({
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center' },
   header: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: 16 },
   imageFrame: { borderRadius: 18, padding: 3, marginBottom: 16 },
-  image: { width: '100%', height: 160, borderRadius: 15 },
+  image: { width: '100%', aspectRatio: EVENT_IMAGE_ASPECT_RATIO, borderRadius: 15 },
   imagePlaceholder: { backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   imagePlaceholderIcon: { fontSize: 32, marginBottom: 6 },
   imagePlaceholderText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },

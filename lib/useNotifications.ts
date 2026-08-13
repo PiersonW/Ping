@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { supabase } from '../supabase';
 import { NotificationType } from './notify';
@@ -84,6 +85,21 @@ export function useNotifications(userId?: string | null) {
     if (!userId) return;
     const interval = setInterval(fetchAll, 60000);
     return () => clearInterval(interval);
+  }, [userId, fetchAll]);
+
+  // Mobile OSes routinely suspend the realtime websocket while the app is
+  // backgrounded — a push notification still arrives (that's delivered by
+  // APNs independently), but the in-app badge/list can silently stop
+  // reflecting new rows until something explicitly refetches. Doing that
+  // every time the app comes back to the foreground means what you saw in
+  // the push is always there when you actually open the app, regardless of
+  // whether the socket reconnected on its own.
+  useEffect(() => {
+    if (!userId) return;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') fetchAll();
+    });
+    return () => subscription.remove();
   }, [userId, fetchAll]);
 
   useEffect(() => {
