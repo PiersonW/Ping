@@ -187,14 +187,15 @@ export default function HomeScreen() {
       return;
     }
 
-    // Past events "archive" themselves off the board this way — a sent
-    // event drops off once its date passes, but a draft stays visible
-    // regardless of date since it still needs to be sent or edited.
+    // Every invited event is fetched regardless of date - visibleEvents
+    // below is what actually hides past events from the default Upcoming
+    // view, so tapping a past day on the calendar can still reach that
+    // day's event (and its conversation) instead of it never having been
+    // loaded at all.
     const { data, error } = await supabase
       .from("events")
       .select("*")
       .in("id", invitedEventIds)
-      .or(`status.eq.draft,event_date.gte.${new Date().toISOString()}`)
       .order("event_date", { ascending: true });
 
     if (error) {
@@ -397,8 +398,17 @@ export default function HomeScreen() {
       result = result.filter((e) => e.status === "draft");
     }
     if (selectedDate) {
+      // Explicitly tapping a day - including a past one - always shows
+      // what was (or is) there. Only the default Upcoming view (no day
+      // picked) hides events once they're over.
       result = result.filter(
         (e) => toDateKey(new Date(e.event_date)) === selectedDate,
+      );
+    } else {
+      result = result.filter(
+        (e) =>
+          e.status === "draft" ||
+          new Date(e.end_date || e.event_date).getTime() >= Date.now(),
       );
     }
     return result;

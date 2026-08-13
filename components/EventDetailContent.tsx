@@ -18,6 +18,7 @@ import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import ShareInviteModal from './ShareInviteModal';
 import EditEventModal, { EditableEvent } from './EditEventModal';
+import PhotoViewerModal from './PhotoViewerModal';
 import { colors, cardFrameGradient, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
 import { notify } from '../lib/notify';
 import { submitRsvp, RsvpStatus } from '../lib/rsvp';
@@ -35,6 +36,7 @@ type EventDetail = {
   host_id: string | null;
   is_public: boolean;
   image_url: string | null;
+  image_url_full: string | null;
   status: 'sent' | 'draft';
   description: string | null;
 };
@@ -110,6 +112,7 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
   const [customDraftByItem, setCustomDraftByItem] = useState<Record<string, string>>({});
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
 
   const myInvitee = invitees.find((inv) => inv.user_id === session?.user?.id) || null;
   const isHost = event?.host_id === session?.user?.id;
@@ -388,14 +391,16 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
         )}
 
         {!!event.image_url && (
-          <LinearGradient
-            colors={cardFrameGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.imageFrame}
-          >
-            <Image source={{ uri: event.image_url }} style={styles.image} resizeMode="cover" />
-          </LinearGradient>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => setPhotoViewerVisible(true)}>
+            <LinearGradient
+              colors={cardFrameGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.imageFrame}
+            >
+              <Image source={{ uri: event.image_url }} style={styles.image} resizeMode="cover" />
+            </LinearGradient>
+          </TouchableOpacity>
         )}
 
         <Text style={styles.title}>{event.title}</Text>
@@ -669,6 +674,7 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
             end_date: event.end_date,
             is_all_day: event.is_all_day,
             image_url: event.image_url,
+            image_url_full: event.image_url_full,
             is_public: event.is_public,
             status: event.status,
             description: event.description,
@@ -690,6 +696,12 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
           // ~300ms) before dismissing the outer one avoids the collision.
           setTimeout(onClose, 350);
         }}
+      />
+
+      <PhotoViewerModal
+        visible={photoViewerVisible}
+        uri={event.image_url_full || event.image_url}
+        onClose={() => setPhotoViewerVisible(false)}
       />
     </>
   );

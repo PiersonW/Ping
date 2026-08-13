@@ -31,6 +31,18 @@ export async function uploadEventImage(
   return uploadImage(localUri, `${ownerId}/${Date.now()}`);
 }
 
+// The cropped photo (uploadEventImage) is what cards/banners show, but it's
+// destructively cropped - nothing outside that frame survives in it. This
+// uploads the original, never-cropped pick alongside it so a full-screen
+// view has something more than the cropped sliver to show (e.g. a flyer
+// with text that got cropped out of the banner shape).
+export async function uploadEventImageFull(
+  localUri: string,
+  ownerId: string,
+): Promise<string> {
+  return uploadImage(localUri, `${ownerId}/${Date.now()}-full`);
+}
+
 // Reuses the same bucket as event photos, under its own prefix, so no
 // separate storage bucket needs to be provisioned for avatars.
 export async function uploadAvatarImage(

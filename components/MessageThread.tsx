@@ -16,6 +16,8 @@ import { useAuth } from '../lib/AuthContext';
 import { colors } from '../lib/theme';
 import { notify } from '../lib/notify';
 import { displayName } from '../lib/displayName';
+import { useMessageReactions } from '../lib/useMessageReactions';
+import ReactionPicker from './ReactionPicker';
 
 const PAGE_SIZE = 30;
 
@@ -52,6 +54,11 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
   const [myInviteeId, setMyInviteeId] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const listRef = useRef<FlatList>(null);
+  const [reactingToId, setReactingToId] = useState<string | null>(null);
+  const { reactionsByMessage, fetchForIds, toggleReaction } = useMessageReactions(
+    'message_id',
+    session?.user?.id
+  );
 
   // A rightward swipe anywhere on the thread also triggers the same
   // back-out as the button - only claims the gesture once the movement is
@@ -131,7 +138,8 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     const page = (data as any[]) || [];
     setMessages(page);
     setHasMore(page.length === PAGE_SIZE);
-  }, [eventId]);
+    fetchForIds(page.map((m) => m.id));
+  }, [eventId, fetchForIds]);
 
   const loadOlder = async () => {
     if (loadingMore || !hasMore || messages.length === 0) return;
@@ -155,6 +163,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     const page = (data as any[]) || [];
     setMessages((prev) => [...prev, ...page]);
     setHasMore(page.length === PAGE_SIZE);
+    fetchForIds(page.map((m) => m.id));
   };
 
   useEffect(() => {
@@ -283,17 +292,40 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
           }
           renderItem={({ item }) => {
             const isMine = item.sender_id === session?.user?.id;
+            const reactions = reactionsByMessage[item.id] || [];
             return (
               <View style={[styles.bubbleRow, isMine && styles.bubbleRowMine]}>
-                <View style={[styles.bubble, isMine && styles.bubbleMine]}>
-                  {!isMine && <Text style={styles.senderName}>{senderName(item)}</Text>}
-                  <Text style={[styles.bubbleText, isMine && styles.bubbleTextMine]}>{item.body}</Text>
-                  <Text style={[styles.timestamp, isMine && styles.timestampMine]}>
-                    {new Date(item.created_at).toLocaleTimeString(undefined, {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Text>
+                <View>
+                  <TouchableOpacity
+                    style={[styles.bubble, isMine && styles.bubbleMine]}
+                    activeOpacity={0.85}
+                    onLongPress={() => setReactingToId(item.id)}
+                  >
+                    {!isMine && <Text style={styles.senderName}>{senderName(item)}</Text>}
+                    <Text style={[styles.bubbleText, isMine && styles.bubbleTextMine]}>{item.body}</Text>
+                    <Text style={[styles.timestamp, isMine && styles.timestampMine]}>
+                      {new Date(item.created_at).toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </TouchableOpacity>
+                  {reactions.length > 0 && (
+                    <View style={[styles.reactionRow, isMine && styles.reactionRowMine]}>
+                      {reactions.map((r) => (
+                        <TouchableOpacity
+                          key={r.emoji}
+                          style={[styles.reactionPill, r.mine && styles.reactionPillMine]}
+                          onPress={() => toggleReaction(item.id, r.emoji)}
+                        >
+                          <Text style={styles.reactionPillText}>
+                            {r.emoji}
+                            {r.count > 1 ? ` ${r.count}` : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                 </View>
               </View>
             );
@@ -332,6 +364,14 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
           <Text style={styles.sendButtonText}>Send</Text>
         </TouchableOpacity>
       </View>
+
+      <ReactionPicker
+        visible={!!reactingToId}
+        onClose={() => setReactingToId(null)}
+        onSelect={(emoji) => {
+          if (reactingToId) toggleReaction(reactingToId, emoji);
+        }}
+      />
     </View>
   );
 }
@@ -361,6 +401,19 @@ const styles = StyleSheet.create({
   bubbleTextMine: { color: colors.textOnPrimary },
   timestamp: { color: colors.textMuted, fontSize: 10, marginTop: 4, textAlign: 'right' },
   timestampMine: { color: 'rgba(255,255,255,0.75)' },
+  reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
+  reactionRowMine: { justifyContent: 'flex-end' },
+  reactionPill: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  reactionPillMine: { borderColor: colors.primary, backgroundColor: colors.primaryPale },
+  reactionPillText: { fontSize: 13, color: colors.textPrimary },
   inputRow: {
     flexDirection: 'row',
     gap: 8,

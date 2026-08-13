@@ -23,7 +23,7 @@ import { useAuth } from '../lib/AuthContext';
 import { findOrCreateContact, healContactLink, getAlreadyInvitedPhones, normalizePhone } from '../lib/phone';
 import { loadMemberGroups } from '../lib/sharedGroups';
 import { sendSmsInvites } from '../lib/sms';
-import { uploadEventImage } from '../lib/imageUpload';
+import { uploadEventImage, uploadEventImageFull } from '../lib/imageUpload';
 import { pickEventImage } from '../lib/imagePicker';
 import { colors, cardFrameGradient, calendarTheme, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
 import { isMultiDayEvent } from '../lib/eventDate';
@@ -50,6 +50,7 @@ export type EditableEvent = {
   end_date: string | null;
   is_all_day: boolean;
   image_url: string | null;
+  image_url_full: string | null;
   is_public: boolean;
   status: 'sent' | 'draft';
   description: string | null;
@@ -82,7 +83,14 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   const [submitting, setSubmitting] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  // The never-cropped pick, kept separate from imageUri (the cropped
+  // result) so recropping always has full image data to work with - see
+  // handlePhotoTap. Only ever populated for a photo picked this session;
+  // an event's already-saved photo has no original on hand to fall back
+  // to, since only the cropped version ever gets uploaded.
+  const [originalImageUri, setOriginalImageUri] = useState<string | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const [existingImageUrlFull, setExistingImageUrlFull] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [cropModalVisible, setCropModalVisible] = useState(false);
   const [cropSourceUri, setCropSourceUri] = useState<string | null>(null);
@@ -177,7 +185,9 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       setIsAllDay(!!event.is_all_day);
       setIsPublic(event.is_public);
       setImageUri(null);
+      setOriginalImageUri(null);
       setExistingImageUrl(event.image_url);
+      setExistingImageUrlFull(event.image_url_full);
       setSelectedContactIds([]);
       setSelectedGroupIds([]);
       setExcludedGroupMemberIds([]);
@@ -359,17 +369,26 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
 
   // A photo already attached (whether a fresh local pick or the event's
   // already-uploaded one) gets a choice to just reframe it in place instead
-  // of always forcing a fresh trip through the library.
+  // of always forcing a fresh trip through the library. Recropping starts
+  // from the original, never-cropped pick when there is one - once a photo
+  // has been cropped to the exact target frame there's no extra image data
+  // left outside it to reposition, so recropping the previous crop result
+  // would have nothing to actually do. An event's already-saved photo has
+  // no such original on hand (only the cropped version was ever uploaded),
+  // so that case still recrops the saved photo itself.
   const handlePhotoTap = async () => {
     const currentUri = imageUri || existingImageUrl;
     if (currentUri) {
       Alert.alert('Photo', undefined, [
-        { text: 'Recrop This Photo', onPress: () => startCrop(currentUri) },
+        { text: 'Recrop This Photo', onPress: () => startCrop(originalImageUri || currentUri) },
         {
           text: 'Choose a Different Photo',
           onPress: async () => {
             const uri = await pickEventImage();
-            if (uri) startCrop(uri);
+            if (uri) {
+              setOriginalImageUri(uri);
+              startCrop(uri);
+            }
           },
         },
         { text: 'Cancel', style: 'cancel' },
@@ -377,7 +396,10 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       return;
     }
     const uri = await pickEventImage();
-    if (uri) startCrop(uri);
+    if (uri) {
+      setOriginalImageUri(uri);
+      startCrop(uri);
+    }
   };
 
   const toggleContact = (id: string) => {
@@ -561,10 +583,22 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
     setSubmitting(true);
 
     let imageUrl = existingImageUrl;
+    let imageUrlFull = existingImageUrlFull;
     if (imageUri) {
       setUploadingImage(true);
       try {
-        imageUrl = await uploadEventImage(imageUri, session.user.id);
+        if (originalImageUri) {
+          [imageUrl, imageUrlFull] = await Promise.all([
+            uploadEventImage(imageUri, session.user.id),
+            uploadEventImageFull(originalImageUri, session.user.id),
+          ]);
+        } else {
+          // Recropped the already-saved photo with no original on hand -
+          // there's nothing better than the cropped result to offer as the
+          // full version, so leave whatever full image already existed
+          // (if any) alone rather than overwrite it with the cropped one.
+          imageUrl = await uploadEventImage(imageUri, session.user.id);
+        }
       } catch (err) {
         console.error('Error uploading image:', err);
         setUploadingImage(false);
@@ -584,6 +618,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       is_all_day: isAllDay,
       is_public: isPublic,
       image_url: imageUrl,
+      image_url_full: imageUrlFull,
     };
     if (sendNow) updates.status = 'sent';
 

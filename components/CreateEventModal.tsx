@@ -23,7 +23,7 @@ import { useAuth } from '../lib/AuthContext';
 import { findOrCreateContact, healContactLink } from '../lib/phone';
 import { loadMemberGroups } from '../lib/sharedGroups';
 import { sendSmsInvites } from '../lib/sms';
-import { uploadEventImage } from '../lib/imageUpload';
+import { uploadEventImage, uploadEventImageFull } from '../lib/imageUpload';
 import { pickEventImage } from '../lib/imagePicker';
 import { colors, cardFrameGradient, calendarTheme, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
 import { notify } from '../lib/notify';
@@ -66,6 +66,10 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   const [submitting, setSubmitting] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  // The never-cropped pick, kept separate from imageUri (the cropped
+  // result) so recropping always has full image data to work with - see
+  // handlePhotoTap.
+  const [originalImageUri, setOriginalImageUri] = useState<string | null>(null);
   const [cropModalVisible, setCropModalVisible] = useState(false);
   const [cropSourceUri, setCropSourceUri] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -226,16 +230,23 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
 
   // A photo already attached gets a choice to just reframe it in place
   // (no picking involved, so the original crop tool never even comes up)
-  // instead of always forcing a fresh trip through the library.
+  // instead of always forcing a fresh trip through the library. Recropping
+  // always starts from the original, never-cropped pick - once a photo's
+  // been cropped to the exact target frame there's no extra image data
+  // left outside it to drag into view, so recropping the previous crop
+  // result would have nothing to actually reposition.
   const handlePhotoTap = async () => {
     if (imageUri) {
       Alert.alert('Photo', undefined, [
-        { text: 'Recrop This Photo', onPress: () => startCrop(imageUri) },
+        { text: 'Recrop This Photo', onPress: () => startCrop(originalImageUri || imageUri) },
         {
           text: 'Choose a Different Photo',
           onPress: async () => {
             const uri = await pickEventImage();
-            if (uri) startCrop(uri);
+            if (uri) {
+              setOriginalImageUri(uri);
+              startCrop(uri);
+            }
           },
         },
         { text: 'Cancel', style: 'cancel' },
@@ -243,7 +254,10 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
       return;
     }
     const uri = await pickEventImage();
-    if (uri) startCrop(uri);
+    if (uri) {
+      setOriginalImageUri(uri);
+      startCrop(uri);
+    }
   };
 
   const toggleContact = (id: string) => {
@@ -342,6 +356,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
     setExcludedGroupMemberIds([]);
     setIsPublic(false);
     setImageUri(null);
+    setOriginalImageUri(null);
     setItems([]);
     setShowAllContacts(false);
   };
@@ -437,10 +452,14 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
     setSubmitting(true);
 
     let imageUrl: string | null = null;
+    let imageUrlFull: string | null = null;
     if (imageUri) {
       setUploadingImage(true);
       try {
-        imageUrl = await uploadEventImage(imageUri, session.user.id);
+        [imageUrl, imageUrlFull] = await Promise.all([
+          uploadEventImage(imageUri, session.user.id),
+          uploadEventImageFull(originalImageUri || imageUri, session.user.id),
+        ]);
       } catch (err) {
         console.error('Error uploading image:', err);
         setUploadingImage(false);
@@ -465,6 +484,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
           host_id: session.user.id,
           is_public: isPublic,
           image_url: imageUrl,
+          image_url_full: imageUrlFull,
         },
       ])
       .select()
