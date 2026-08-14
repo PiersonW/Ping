@@ -47,10 +47,14 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
   // tapping the 💬 bubble - only claims the gesture once movement is clearly
   // horizontal (not a vertical scroll of the card's content), matching the
   // rightward swipe-back gesture in MessageThread.tsx.
+  // Capture phase, not bubble - EventDetailContent's ScrollView otherwise
+  // grabs the touch via its own native scroll gesture before a bubble-phase
+  // handler on this parent view ever gets asked. Same fix as the swipe-back
+  // gestures in MessageThread.tsx/GroupMessageThread.tsx.
   const swipeToMessagesResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gesture) =>
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
         gesture.dx < -12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
       onPanResponderRelease: (_, gesture) => {
         if (!isFlipped && gesture.dx < -60 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
@@ -92,8 +96,12 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
     onClose();
   };
 
-  const frontRotateY = flipAnim.interpolate({ inputRange: [0, 180], outputRange: ['0deg', '180deg'] });
-  const backRotateY = flipAnim.interpolate({ inputRange: [0, 180], outputRange: ['180deg', '360deg'] });
+  // Negative degrees spin the card the opposite way around (left edge
+  // leading instead of right) while landing on the same resting
+  // orientation for both faces - rotateY(-180deg) looks identical to
+  // rotateY(180deg) once settled, only the direction of travel differs.
+  const frontRotateY = flipAnim.interpolate({ inputRange: [0, 180], outputRange: ['0deg', '-180deg'] });
+  const backRotateY = flipAnim.interpolate({ inputRange: [0, 180], outputRange: ['-180deg', '-360deg'] });
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>

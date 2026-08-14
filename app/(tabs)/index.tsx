@@ -822,7 +822,7 @@ export default function HomeScreen() {
   // The compact rows block's header carries the Events/Groups toggle.
   // Date-filter/"Show all" is events-only — groups aren't date-scoped.
   const renderRowsHeader = () => (
-    <View style={styles.listHeaderRow}>
+    <View style={[styles.listHeaderRow, styles.rowsHeaderRow]}>
       <TouchableOpacity onPress={closeMessages} style={styles.backToCalendarButton}>
         <Text style={styles.pageTitle} numberOfLines={1}>
           ‹{" "}
@@ -1141,6 +1141,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginHorizontal: 20,
     marginTop: 4,
+  },
+  // Message Board / Groups board sit right under the drag handle with no
+  // separate spacer above them (unlike the Upcoming list's handleSpacer),
+  // so this row needs its own extra breathing room instead of sharing
+  // listHeaderRow's tighter default.
+  rowsHeaderRow: {
+    marginTop: 16,
+    marginBottom: 12,
   },
   listHeaderActions: { flexDirection: "row", gap: 16, alignItems: "center" },
   // The title itself is the way back to the calendar now (tap it) - it used

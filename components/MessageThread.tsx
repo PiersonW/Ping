@@ -66,10 +66,14 @@ export default function MessageThread({ eventId, onFlipBack, backLabel = 'Event 
   // A rightward swipe anywhere on the thread also triggers the same
   // back-out as the button - only claims the gesture once the movement is
   // clearly horizontal, so it doesn't fight the FlatList's vertical scroll.
+  // Must claim in the *capture* phase (top-down), not the bubble phase -
+  // FlatList is a ScrollView underneath, and its native scroll gesture
+  // recognizer grabs touches before a parent's bubble-phase handler ever
+  // gets asked, so onMoveShouldSetPanResponder alone never fires here.
   const swipeBackResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gesture) =>
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
         gesture.dx > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
       onPanResponderRelease: (_, gesture) => {
         if (gesture.dx > 60 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {

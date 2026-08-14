@@ -66,10 +66,12 @@ export default function GroupMessageThread({ groupId, onSwipeBack }: Props) {
   // modal has no "front card" to flip to (see the note in GroupChatModal),
   // so swiping just closes it back to whichever list (Groups tab or the
   // group Message Board) was open underneath.
+  // Capture phase, not bubble - see the matching note in MessageThread.tsx:
+  // FlatList's native scroll gesture otherwise grabs the touch first.
   const swipeBackResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gesture) =>
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
         gesture.dx > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
       onPanResponderRelease: (_, gesture) => {
         if (gesture.dx > 60 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
