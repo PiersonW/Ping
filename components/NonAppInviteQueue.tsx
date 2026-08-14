@@ -13,6 +13,14 @@ type Props = {
   eventDate: Date;
   location: string;
   onDone: () => void;
+  // Fires once this modal has actually finished its own close animation
+  // (native Modal `onDismiss`, iOS-only). The parent's own close/finish
+  // logic belongs here, not in onDone directly - this modal is nested
+  // inside CreateEventModal's/ShareInviteModal's own Modal, and telling
+  // both to dismiss in the same tick is a known way to hang iOS's modal
+  // presentation. onDone only hides this modal; onClosed is the signal
+  // that it's safe to also close what's underneath it.
+  onClosed?: () => void;
 };
 
 // Shown right after sending invites, for whichever invitees don't have the
@@ -31,6 +39,7 @@ export default function NonAppInviteQueue({
   eventDate,
   location,
   onDone,
+  onClosed,
 }: Props) {
   const [index, setIndex] = useState(0);
   const awaitingReturnRef = useRef(false);
@@ -66,7 +75,7 @@ export default function NonAppInviteQueue({
   const handleSkip = () => setIndex((i) => i + 1);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onDone}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onDone} onDismiss={onClosed}>
       <View style={styles.overlay}>
         <View style={styles.card}>
           <View style={styles.handle} />

@@ -979,8 +979,8 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
         eventTitle={title || 'An event'}
         eventDate={eventDate}
         location={location}
-        onDone={() => {
-          setQueueVisible(false);
+        onDone={() => setQueueVisible(false)}
+        onClosed={() => {
           resetForm();
           if (pendingFinishStatus) onCreated(pendingFinishStatus);
         }}

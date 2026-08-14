@@ -307,10 +307,8 @@ export default function ShareInviteModal({
         eventTitle={eventTitle || 'An event'}
         eventDate={new Date(eventDate || Date.now())}
         location={location || ''}
-        onDone={() => {
-          setQueueVisible(false);
-          onInvited();
-        }}
+        onDone={() => setQueueVisible(false)}
+        onClosed={onInvited}
       />
     </Modal>
   );
