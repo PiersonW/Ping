@@ -9,8 +9,8 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
-  PanResponder,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import { colors } from '../lib/theme';
@@ -66,20 +66,17 @@ export default function GroupMessageThread({ groupId, onSwipeBack }: Props) {
   // modal has no "front card" to flip to (see the note in GroupChatModal),
   // so swiping just closes it back to whichever list (Groups tab or the
   // group Message Board) was open underneath.
-  // Capture phase, not bubble - see the matching note in MessageThread.tsx:
-  // FlatList's native scroll gesture otherwise grabs the touch first.
-  const swipeBackResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponderCapture: (_, gesture) =>
-        gesture.dx > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx > 60 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
-          onSwipeBack?.();
-        }
-      },
-    })
-  ).current;
+  // See the matching note in MessageThread.tsx: PanResponder doesn't
+  // reliably win against the FlatList's native scroll gesture on-device,
+  // so this uses react-native-gesture-handler's Pan gesture instead.
+  const swipeBackGesture = Gesture.Pan()
+    .activeOffsetX(15)
+    .failOffsetY([-10, 10])
+    .onEnd((e) => {
+      if (e.translationX > 60) {
+        onSwipeBack?.();
+      }
+    });
 
   // Owners don't have their own group_members row (see recipient logic in
   // handleSend below), so muting is only offered to actual members for now.
@@ -302,7 +299,8 @@ export default function GroupMessageThread({ groupId, onSwipeBack }: Props) {
   };
 
   return (
-    <View style={{ flex: 1 }} {...swipeBackResponder.panHandlers}>
+    <GestureDetector gesture={swipeBackGesture}>
+    <View style={{ flex: 1 }}>
       {isMember && (
         <TouchableOpacity onPress={toggleMuted} style={styles.muteRow}>
           <Text style={styles.muteText}>{muted ? '🔕 Muted' : '🔔 Mute'}</Text>
@@ -393,6 +391,7 @@ export default function GroupMessageThread({ groupId, onSwipeBack }: Props) {
         }}
       />
     </View>
+    </GestureDetector>
   );
 }
 

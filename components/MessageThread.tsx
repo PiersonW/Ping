@@ -9,8 +9,8 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
-  PanResponder,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import { colors } from '../lib/theme';
@@ -64,24 +64,19 @@ export default function MessageThread({ eventId, onFlipBack, backLabel = 'Event 
   );
 
   // A rightward swipe anywhere on the thread also triggers the same
-  // back-out as the button - only claims the gesture once the movement is
-  // clearly horizontal, so it doesn't fight the FlatList's vertical scroll.
-  // Must claim in the *capture* phase (top-down), not the bubble phase -
-  // FlatList is a ScrollView underneath, and its native scroll gesture
-  // recognizer grabs touches before a parent's bubble-phase handler ever
-  // gets asked, so onMoveShouldSetPanResponder alone never fires here.
-  const swipeBackResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponderCapture: (_, gesture) =>
-        gesture.dx > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx > 60 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
-          onFlipBack();
-        }
-      },
-    })
-  ).current;
+  // back-out as the button. PanResponder (bubble or capture phase) doesn't
+  // reliably win against the FlatList's native scroll gesture on-device -
+  // react-native-gesture-handler's Pan gesture negotiates that correctly:
+  // failOffsetY cedes to the FlatList once vertical intent is clear,
+  // activeOffsetX only claims once horizontal intent is clear.
+  const swipeBackGesture = Gesture.Pan()
+    .activeOffsetX(15)
+    .failOffsetY([-10, 10])
+    .onEnd((e) => {
+      if (e.translationX > 60) {
+        onFlipBack();
+      }
+    });
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -264,7 +259,8 @@ export default function MessageThread({ eventId, onFlipBack, backLabel = 'Event 
   };
 
   return (
-    <View style={{ flex: 1 }} {...swipeBackResponder.panHandlers}>
+    <GestureDetector gesture={swipeBackGesture}>
+    <View style={{ flex: 1 }}>
       <View style={styles.topRow}>
         <TouchableOpacity onPress={onFlipBack} style={styles.backButton}>
           <Text style={styles.backText}>‹ {backLabel}</Text>
@@ -366,6 +362,7 @@ export default function MessageThread({ eventId, onFlipBack, backLabel = 'Event 
         }}
       />
     </View>
+    </GestureDetector>
   );
 }
 

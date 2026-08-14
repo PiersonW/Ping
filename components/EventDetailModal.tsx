@@ -8,6 +8,7 @@ import {
   PanResponder,
   StyleSheet,
 } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import EventDetailContent from './EventDetailContent';
 import MessageThread from './MessageThread';
 import { colors } from '../lib/theme';
@@ -44,25 +45,24 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
   };
 
   // Leftward swipe on the front face flips to messages, same destination as
-  // tapping the 💬 bubble - only claims the gesture once movement is clearly
-  // horizontal (not a vertical scroll of the card's content), matching the
-  // rightward swipe-back gesture in MessageThread.tsx.
-  // Capture phase, not bubble - EventDetailContent's ScrollView otherwise
-  // grabs the touch via its own native scroll gesture before a bubble-phase
-  // handler on this parent view ever gets asked. Same fix as the swipe-back
-  // gestures in MessageThread.tsx/GroupMessageThread.tsx.
-  const swipeToMessagesResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponderCapture: (_, gesture) =>
-        gesture.dx < -12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
-      onPanResponderRelease: (_, gesture) => {
-        if (!isFlipped && gesture.dx < -60 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
-          toggleFlip();
-        }
-      },
-    })
-  ).current;
+  // tapping the 💬 bubble - matches the rightward swipe-back gesture in
+  // MessageThread.tsx.
+  // Plain PanResponder (even capture-phase) turned out not to reliably win
+  // against EventDetailContent's ScrollView on-device - its native scroll
+  // gesture recognizer still grabbed the touch regardless. react-native-
+  // gesture-handler's Pan gesture is built to negotiate with a native
+  // ScrollView correctly: failOffsetY lets the scroll view win outright once
+  // vertical intent is clear, activeOffsetX only claims once horizontal
+  // intent is clear - the same library already drives the calendar sheet's
+  // drag handle in app/(tabs)/index.tsx.
+  const swipeToMessagesGesture = Gesture.Pan()
+    .activeOffsetX(-15)
+    .failOffsetY([-10, 10])
+    .onEnd((e) => {
+      if (!isFlipped && e.translationX < -60) {
+        toggleFlip();
+      }
+    });
 
   const panResponder = useRef(
     PanResponder.create({
@@ -105,6 +105,11 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+      {/* RN's Modal renders into its own native root, separate from the
+          GestureHandlerRootView wrapping the rest of the app in
+          app/_layout.tsx - without this, react-native-gesture-handler
+          gestures inside a Modal silently don't work at all. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform: [{ translateY: dragY }] }]}>
           <View
@@ -116,13 +121,14 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
           </View>
 
           <View style={styles.faceContainer}>
-            <Animated.View
-              style={[styles.face, { transform: [{ perspective: 1000 }, { rotateY: frontRotateY }] }]}
-              pointerEvents={isFlipped ? 'none' : 'auto'}
-              {...swipeToMessagesResponder.panHandlers}
-            >
-              {eventId && <EventDetailContent eventId={eventId} onClose={handleClose} variant="modal" />}
-            </Animated.View>
+            <GestureDetector gesture={swipeToMessagesGesture}>
+              <Animated.View
+                style={[styles.face, { transform: [{ perspective: 1000 }, { rotateY: frontRotateY }] }]}
+                pointerEvents={isFlipped ? 'none' : 'auto'}
+              >
+                {eventId && <EventDetailContent eventId={eventId} onClose={handleClose} variant="modal" />}
+              </Animated.View>
+            </GestureDetector>
 
             <Animated.View
               style={[
@@ -155,6 +161,7 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
           )}
         </Animated.View>
       </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

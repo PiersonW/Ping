@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Modal, View, TouchableOpacity, Text, Animated, PanResponder, StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import GroupMessageThread from './GroupMessageThread';
 import { colors } from '../lib/theme';
@@ -54,6 +55,10 @@ export default function GroupChatModal({ visible, groupId, groupName, onClose }:
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      {/* See the matching note in EventDetailModal.tsx - RN's Modal renders
+          into its own native root, so react-native-gesture-handler gestures
+          inside GroupMessageThread need this wrapper to work at all. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform: [{ translateY: dragY }] }]}>
           <View
@@ -78,6 +83,7 @@ export default function GroupChatModal({ visible, groupId, groupName, onClose }:
           </View>
         </Animated.View>
       </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
