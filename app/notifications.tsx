@@ -26,8 +26,17 @@ const renderDeleteAction = (dragX: Animated.AnimatedInterpolation<number>, onPre
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { notifications, pendingInvites, loading, refresh, markRead, markAllRead, deleteNotification, openEventModal } =
-    useNotificationsContext();
+  const {
+    notifications,
+    pendingInvites,
+    loading,
+    refresh,
+    markRead,
+    markAllRead,
+    deleteNotification,
+    openEventModal,
+    openGroupChat,
+  } = useNotificationsContext();
 
   useFocusEffect(
     useCallback(() => {
@@ -47,7 +56,8 @@ export default function NotificationsScreen() {
   const openNotification = (n: NotificationRowData) => {
     markRead(n.id);
     if (n.group_id) {
-      router.push(`/groups/${n.group_id}`);
+      openGroupChat(n.group_id);
+      router.dismissTo('/');
     } else if (n.event_id) {
       openEventModal(n.event_id, n.type === 'message');
       router.dismissTo('/');

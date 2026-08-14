@@ -55,7 +55,7 @@ export default function MessageBubble({
 
   return (
     <View style={[styles.bubbleRow, isMine && styles.bubbleRowMine]}>
-      <View>
+      <View style={isMine ? styles.bubbleColumnMine : styles.bubbleColumn}>
         <Animated.View
           ref={bubbleRef}
           collapsable={false}
@@ -96,6 +96,12 @@ export default function MessageBubble({
 const styles = StyleSheet.create({
   bubbleRow: { flexDirection: 'row', width: '100%', marginBottom: 10 },
   bubbleRowMine: { justifyContent: 'flex-end' },
+  // Explicit on this inner wrapper too, redundant with bubbleRow's
+  // justifyContent - the bubble and its reaction row both need to anchor
+  // to the same edge independently of each other's width, not just be
+  // pushed as a shrink-wrapped unit that could end up misaligned.
+  bubbleColumn: { alignItems: 'flex-start' },
+  bubbleColumnMine: { alignItems: 'flex-end' },
   bubble: {
     maxWidth: '85%',
     backgroundColor: colors.surface,
