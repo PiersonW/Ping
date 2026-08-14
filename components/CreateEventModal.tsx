@@ -22,7 +22,6 @@ import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import { findOrCreateContact, healContactLink } from '../lib/phone';
 import { loadMemberGroups } from '../lib/sharedGroups';
-import { sendSmsInvites } from '../lib/sms';
 import { uploadEventImage, uploadEventImageFull } from '../lib/imageUpload';
 import { pickEventImage } from '../lib/imagePicker';
 import { colors, cardFrameGradient, calendarTheme, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
@@ -562,7 +561,6 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
             eventId: eventRow.id,
             type: 'invite',
           });
-          sendSmsInvites(insertedInvitees || [], healedContacts, title, eventDate, location);
           smsQueueItems = (insertedInvitees || [])
             .filter((r) => r.invited_via === 'sms' && r.contact_id)
             .map((r) => {

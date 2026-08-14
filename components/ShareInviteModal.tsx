@@ -14,7 +14,6 @@ import {
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import { findOrCreateContact, healContactLink, getAlreadyInvitedPhones, normalizePhone } from '../lib/phone';
-import { sendSmsInvites } from '../lib/sms';
 import { colors } from '../lib/theme';
 import { notify } from '../lib/notify';
 import ImportContactsModal from './ImportContactsModal';
@@ -187,7 +186,6 @@ export default function ShareInviteModal({
 
     let smsQueueItems: QueueContact[] = [];
     if (eventDate) {
-      sendSmsInvites(insertedInvitees || [], healedContacts, eventTitle || 'An event', new Date(eventDate), location || '');
       smsQueueItems = (insertedInvitees || [])
         .filter((r) => r.invited_via === 'sms' && r.contact_id)
         .map((r) => {

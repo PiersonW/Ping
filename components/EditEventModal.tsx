@@ -22,7 +22,6 @@ import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import { findOrCreateContact, healContactLink, getAlreadyInvitedPhones, normalizePhone } from '../lib/phone';
 import { loadMemberGroups } from '../lib/sharedGroups';
-import { sendSmsInvites } from '../lib/sms';
 import { uploadEventImage, uploadEventImageFull } from '../lib/imageUpload';
 import { pickEventImage } from '../lib/imagePicker';
 import { colors, cardFrameGradient, calendarTheme, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
@@ -689,10 +688,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
             invited_via: contact?.linked_user_id ? 'app' : contact?.phone ? 'sms' : 'email',
           };
         });
-        const { data: insertedInvitees, error: inviteeError } = await supabase
-          .from('invitees')
-          .insert(rows)
-          .select();
+        const { error: inviteeError } = await supabase.from('invitees').insert(rows);
         if (inviteeError) {
           console.error('Error creating invitees:', inviteeError);
         } else {
@@ -701,7 +697,6 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
             eventId: event.id,
             type: 'invite',
           });
-          sendSmsInvites(insertedInvitees || [], healedContacts, title, eventDate, location);
         }
       }
     }

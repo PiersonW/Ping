@@ -24,10 +24,11 @@ type Props = {
 };
 
 // Shown right after sending invites, for whichever invitees don't have the
-// app - Twilio's toll-free registration has been unreliable, so this gives
-// the host a guaranteed-to-work fallback: it hands off to their own
-// Messages app (pre-filled, via the sms: URL scheme) one contact at a time,
-// rather than trying to send SMS from a business number itself. Neither iOS
+// app. Twilio-based auto-send was abandoned after repeated toll-free
+// registration rejections, so this is the only thing that reaches these
+// invitees now: it hands off to the host's own Messages app (pre-filled,
+// via the sms: URL scheme) one contact at a time, rather than sending from
+// a business number. Neither iOS
 // nor Android lets an app auto-send on the user's behalf, so advancing to
 // the next contact happens when the app comes back to the foreground after
 // they leave Messages (see the AppState listener below) - close enough to
@@ -64,9 +65,7 @@ export default function NonAppInviteQueue({
 
   const handleText = async () => {
     if (!current) return;
-    const body = buildInviteMessage(eventTitle, eventDate, location, current.inviteeId, {
-      includeRsvpPrompt: false,
-    });
+    const body = buildInviteMessage(eventTitle, eventDate, location, current.inviteeId);
     awaitingReturnRef.current = true;
     const opened = await openSmsComposer(current.phone, body);
     if (!opened) awaitingReturnRef.current = false;
