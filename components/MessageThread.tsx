@@ -283,7 +283,13 @@ export default function MessageThread({ eventId, onFlipBack, backLabel = 'Event 
           data={messages}
           keyExtractor={(m) => m.id}
           inverted
-          contentContainerStyle={{ paddingBottom: 12, flexGrow: 1 }}
+          contentContainerStyle={
+            // flexGrow only when empty, to center the "no messages" text -
+            // applied unconditionally it also stretches short (but
+            // non-empty) message lists, which pushes message groups apart
+            // into ugly gaps instead of clustering near the input.
+            messages.length === 0 ? { paddingBottom: 12, flexGrow: 1 } : { paddingBottom: 12 }
+          }
           onEndReached={loadOlder}
           onEndReachedThreshold={0.3}
           ListFooterComponent={

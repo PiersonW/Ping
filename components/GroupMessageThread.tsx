@@ -316,7 +316,11 @@ export default function GroupMessageThread({ groupId, onSwipeBack }: Props) {
           data={messages}
           keyExtractor={(m) => m.id}
           inverted
-          contentContainerStyle={{ paddingBottom: 12, flexGrow: 1 }}
+          contentContainerStyle={
+            // See the matching note in MessageThread.tsx - flexGrow only
+            // when empty, or short message lists get stretched into gaps.
+            messages.length === 0 ? { paddingBottom: 12, flexGrow: 1 } : { paddingBottom: 12 }
+          }
           onEndReached={loadOlder}
           onEndReachedThreshold={0.3}
           ListFooterComponent={

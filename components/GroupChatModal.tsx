@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
-import { Modal, View, TouchableOpacity, Text, Animated, PanResponder, StyleSheet } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import React, { useEffect } from 'react';
+import { Modal, View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import ReAnimated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import GroupMessageThread from './GroupMessageThread';
 import { colors } from '../lib/theme';
@@ -18,35 +19,39 @@ type Props = {
 // the chat and reuses only the swipe-to-dismiss gesture, not the flip.
 export default function GroupChatModal({ visible, groupId, groupName, onClose }: Props) {
   const router = useRouter();
-  const dragY = useRef(new Animated.Value(0)).current;
+  const dragY = useSharedValue(0);
 
   useEffect(() => {
-    if (visible) dragY.setValue(0);
+    if (visible) dragY.value = 0;
   }, [visible]);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) dragY.setValue(gesture.dy);
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > 100 || gesture.vy > 0.8) {
-          Animated.timing(dragY, {
-            toValue: 800,
-            duration: 200,
-            useNativeDriver: true,
-          }).start(() => {
-            dragY.setValue(0);
-            onClose();
-          });
-        } else {
-          Animated.spring(dragY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
-        }
-      },
+  // Same react-native-gesture-handler + Reanimated combo as
+  // EventDetailModal.tsx's drag handle - see the note there. A plain
+  // PanResponder here alongside GroupMessageThread's gesture-handler-based
+  // swipe-back (both inside the same GestureHandlerRootView below) caused
+  // visible glitching from the two systems fighting over the touch.
+  const dismissGesture = Gesture.Pan()
+    .activeOffsetY(15)
+    .failOffsetX([-15, 15])
+    .onUpdate((e) => {
+      if (e.translationY > 0) dragY.value = e.translationY;
     })
-  ).current;
+    .onEnd((e) => {
+      if (e.translationY > 100 || e.velocityY > 800) {
+        dragY.value = withTiming(800, { duration: 200 }, (finished) => {
+          if (finished) {
+            dragY.value = 0;
+            runOnJS(onClose)();
+          }
+        });
+      } else {
+        dragY.value = withSpring(0, { damping: 18 });
+      }
+    });
+
+  const cardAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: dragY.value }],
+  }));
 
   const handleManage = () => {
     onClose();
@@ -60,14 +65,12 @@ export default function GroupChatModal({ visible, groupId, groupName, onClose }:
           inside GroupMessageThread need this wrapper to work at all. */}
       <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.overlay}>
-        <Animated.View style={[styles.card, { transform: [{ translateY: dragY }] }]}>
-          <View
-            style={styles.dragHandleArea}
-            hitSlop={{ top: 10, bottom: 16, left: 30, right: 30 }}
-            {...panResponder.panHandlers}
-          >
-            <View style={styles.handle} />
-          </View>
+        <ReAnimated.View style={[styles.card, cardAnimatedStyle]}>
+          <GestureDetector gesture={dismissGesture}>
+            <View style={styles.dragHandleArea} hitSlop={{ top: 10, bottom: 16, left: 30, right: 30 }}>
+              <View style={styles.handle} />
+            </View>
+          </GestureDetector>
 
           <View style={styles.headerRow}>
             <Text style={styles.title} numberOfLines={1}>
@@ -81,7 +84,7 @@ export default function GroupChatModal({ visible, groupId, groupName, onClose }:
           <View style={{ flex: 1 }}>
             {groupId && <GroupMessageThread groupId={groupId} onSwipeBack={onClose} />}
           </View>
-        </Animated.View>
+        </ReAnimated.View>
       </View>
       </GestureHandlerRootView>
     </Modal>

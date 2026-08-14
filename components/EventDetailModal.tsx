@@ -1,14 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Modal,
-  View,
-  TouchableOpacity,
-  Text,
-  Animated,
-  PanResponder,
-  StyleSheet,
-} from 'react-native';
+import { Modal, View, TouchableOpacity, Text, Animated, StyleSheet } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import ReAnimated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import EventDetailContent from './EventDetailContent';
 import MessageThread from './MessageThread';
 import { colors } from '../lib/theme';
@@ -23,11 +16,11 @@ type Props = {
 export default function EventDetailModal({ visible, eventId, onClose, startOnMessages = false }: Props) {
   const [isFlipped, setIsFlipped] = useState(startOnMessages);
   const flipAnim = useRef(new Animated.Value(startOnMessages ? 180 : 0)).current;
-  const dragY = useRef(new Animated.Value(0)).current;
+  const dragY = useSharedValue(0);
 
   useEffect(() => {
     if (visible) {
-      dragY.setValue(0);
+      dragY.value = 0;
       // Jump (don't animate) to the requested face — the modal is already
       // sliding in, so an extra flip animation on top would look off.
       flipAnim.setValue(startOnMessages ? 180 : 0);
@@ -42,6 +35,14 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
       useNativeDriver: true,
     }).start();
     setIsFlipped(!isFlipped);
+  };
+
+  const handleClose = () => {
+    if (isFlipped) {
+      flipAnim.setValue(0);
+      setIsFlipped(false);
+    }
+    onClose();
   };
 
   // Leftward swipe on the front face flips to messages, same destination as
@@ -60,41 +61,39 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
     .failOffsetY([-10, 10])
     .onEnd((e) => {
       if (!isFlipped && e.translationX < -60) {
-        toggleFlip();
+        runOnJS(toggleFlip)();
       }
     });
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) dragY.setValue(gesture.dy);
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > 100 || gesture.vy > 0.8) {
-          Animated.timing(dragY, {
-            toValue: 800,
-            duration: 200,
-            useNativeDriver: true,
-          }).start(() => {
-            dragY.setValue(0);
-            handleClose();
-          });
-        } else {
-          Animated.spring(dragY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
-        }
-      },
+  // Drag-to-dismiss on the handle. Previously a plain PanResponder, but that
+  // mixed two different gesture systems (PanResponder + the gesture-handler
+  // Pan above) inside the same GestureHandlerRootView, which turned out to
+  // cause visible glitching - a quick flash/jump before the drag actually
+  // took over. Rebuilt on the same react-native-gesture-handler + Reanimated
+  // combo as the swipe gesture (and as the calendar sheet's drag handle in
+  // app/(tabs)/index.tsx) so only one gesture system is active in this tree.
+  const dismissGesture = Gesture.Pan()
+    .activeOffsetY(15)
+    .failOffsetX([-15, 15])
+    .onUpdate((e) => {
+      if (e.translationY > 0) dragY.value = e.translationY;
     })
-  ).current;
+    .onEnd((e) => {
+      if (e.translationY > 100 || e.velocityY > 800) {
+        dragY.value = withTiming(800, { duration: 200 }, (finished) => {
+          if (finished) {
+            dragY.value = 0;
+            runOnJS(handleClose)();
+          }
+        });
+      } else {
+        dragY.value = withSpring(0, { damping: 18 });
+      }
+    });
 
-  const handleClose = () => {
-    if (isFlipped) {
-      flipAnim.setValue(0);
-      setIsFlipped(false);
-    }
-    onClose();
-  };
+  const cardAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: dragY.value }],
+  }));
 
   // Negative degrees spin the card the opposite way around (left edge
   // leading instead of right) while landing on the same resting
@@ -111,14 +110,12 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
           gestures inside a Modal silently don't work at all. */}
       <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.overlay}>
-        <Animated.View style={[styles.card, { transform: [{ translateY: dragY }] }]}>
-          <View
-            style={styles.dragHandleArea}
-            hitSlop={{ top: 10, bottom: 16, left: 30, right: 30 }}
-            {...panResponder.panHandlers}
-          >
-            <View style={styles.handle} />
-          </View>
+        <ReAnimated.View style={[styles.card, cardAnimatedStyle]}>
+          <GestureDetector gesture={dismissGesture}>
+            <View style={styles.dragHandleArea} hitSlop={{ top: 10, bottom: 16, left: 30, right: 30 }}>
+              <View style={styles.handle} />
+            </View>
+          </GestureDetector>
 
           <View style={styles.faceContainer}>
             <GestureDetector gesture={swipeToMessagesGesture}>
@@ -159,7 +156,7 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
               <Text style={styles.messageBubbleIcon}>💬</Text>
             </TouchableOpacity>
           )}
-        </Animated.View>
+        </ReAnimated.View>
       </View>
       </GestureHandlerRootView>
     </Modal>
