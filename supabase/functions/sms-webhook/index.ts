@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const JOIN_LINK_BASE = 'https://piersonw.github.io/Ping/invite.html';
+const JOIN_LINK_BASE = 'https://pingmobileapp.github.io/Ping/invite.html';
 
 // Mirrors normalizePhone in lib/phone.ts — duplicated here since this runs
 // in Deno, not the RN bundle.

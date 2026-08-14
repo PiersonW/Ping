@@ -1,6 +1,6 @@
 import { supabase } from '../supabase';
 
-const JOIN_LINK_BASE = 'https://piersonw.github.io/Ping/invite.html';
+const JOIN_LINK_BASE = 'https://pingmobileapp.github.io/Ping/invite.html';
 
 type InsertedInviteeRow = {
   id: string;
