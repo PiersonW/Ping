@@ -125,6 +125,12 @@ const styles = StyleSheet.create({
   bubbleColumnMine: { alignItems: 'flex-end' },
   bubble: {
     maxWidth: '85%',
+    // Without this, the bubble sizes itself to fit only its shortest line
+    // (the message body, for something like "Yes") and then squeezes the
+    // name/timestamp lines to fit that same narrow width instead of the
+    // other way around - hence the truncated "Hy…" / "2:2…" - rather than
+    // the bubble growing to fit its widest line like it visually should.
+    minWidth: 110,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
