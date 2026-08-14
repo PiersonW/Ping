@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import { colors } from '../lib/theme';
@@ -69,12 +70,15 @@ export default function GroupMessageThread({ groupId, onSwipeBack }: Props) {
   // See the matching note in MessageThread.tsx: PanResponder doesn't
   // reliably win against the FlatList's native scroll gesture on-device,
   // so this uses react-native-gesture-handler's Pan gesture instead.
+  // onEnd runs as a worklet on the UI thread - calling onSwipeBack directly
+  // from there instead of through runOnJS is exactly the kind of thing that
+  // crashes a release build instead of just erroring in dev.
   const swipeBackGesture = Gesture.Pan()
     .activeOffsetX(15)
     .failOffsetY([-10, 10])
     .onEnd((e) => {
-      if (e.translationX > 60) {
-        onSwipeBack?.();
+      if (e.translationX > 60 && onSwipeBack) {
+        runOnJS(onSwipeBack)();
       }
     });
 
@@ -330,12 +334,17 @@ export default function GroupMessageThread({ groupId, onSwipeBack }: Props) {
               <Text style={styles.endOfThreadText}>Start of conversation</Text>
             ) : null
           }
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             const isMine = item.sender_id === session?.user?.id;
+            // See the matching note in MessageThread.tsx - only label the
+            // first bubble in a consecutive run from the same sender.
+            const showSenderLabel =
+              !isMine &&
+              (index === messages.length - 1 || messages[index + 1]?.sender_id !== item.sender_id);
             return (
               <MessageBubble
                 isMine={isMine}
-                senderLabel={!isMine ? senderName(item) : undefined}
+                senderLabel={showSenderLabel ? senderName(item) : undefined}
                 avatarUrl={!isMine ? item.profiles?.avatar_url : undefined}
                 body={item.body}
                 timestamp={new Date(item.created_at).toLocaleTimeString(undefined, {

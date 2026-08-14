@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import { colors } from '../lib/theme';
@@ -69,12 +70,16 @@ export default function MessageThread({ eventId, onFlipBack, backLabel = 'Event 
   // react-native-gesture-handler's Pan gesture negotiates that correctly:
   // failOffsetY cedes to the FlatList once vertical intent is clear,
   // activeOffsetX only claims once horizontal intent is clear.
+  // onEnd runs as a worklet on the UI thread - calling onFlipBack (a plain
+  // JS function that touches React state/RN Animated) directly from there
+  // instead of through runOnJS is exactly the kind of thing that crashes a
+  // release build instead of just erroring in dev.
   const swipeBackGesture = Gesture.Pan()
     .activeOffsetX(15)
     .failOffsetY([-10, 10])
     .onEnd((e) => {
       if (e.translationX > 60) {
-        onFlipBack();
+        runOnJS(onFlipBack)();
       }
     });
 
@@ -299,12 +304,21 @@ export default function MessageThread({ eventId, onFlipBack, backLabel = 'Event 
               <Text style={styles.endOfThreadText}>Start of conversation</Text>
             ) : null
           }
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             const isMine = item.sender_id === session?.user?.id;
+            // `messages` is newest-first and the list is inverted, so the
+            // chronologically-previous message (rendered just above this
+            // one) is at index + 1. Only label the first bubble in a
+            // consecutive run from the same sender - repeating the full
+            // name on every short message (e.g. a quick back-and-forth) is
+            // most of what was making the thread look cramped.
+            const showSenderLabel =
+              !isMine &&
+              (index === messages.length - 1 || messages[index + 1]?.sender_id !== item.sender_id);
             return (
               <MessageBubble
                 isMine={isMine}
-                senderLabel={!isMine ? senderName(item) : undefined}
+                senderLabel={showSenderLabel ? senderName(item) : undefined}
                 avatarUrl={!isMine ? item.profiles?.avatar_url : undefined}
                 body={item.body}
                 timestamp={new Date(item.created_at).toLocaleTimeString(undefined, {
