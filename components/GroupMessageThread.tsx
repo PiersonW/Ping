@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
+  PanResponder,
 } from 'react-native';
 import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
@@ -27,14 +28,15 @@ type GroupMessage = {
   sender_id: string;
   body: string;
   created_at: string;
-  profiles: { full_name: string | null; email: string | null } | null;
+  profiles: { full_name: string | null; email: string | null; avatar_url: string | null } | null;
 };
 
 type Props = {
   groupId: string;
+  onSwipeBack?: () => void;
 };
 
-export default function GroupMessageThread({ groupId }: Props) {
+export default function GroupMessageThread({ groupId, onSwipeBack }: Props) {
   const { session } = useAuth();
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +61,23 @@ export default function GroupMessageThread({ groupId }: Props) {
     draftRef.current = text;
     setDraft(text);
   };
+
+  // Same rightward-swipe-to-go-back gesture as MessageThread.tsx - this
+  // modal has no "front card" to flip to (see the note in GroupChatModal),
+  // so swiping just closes it back to whichever list (Groups tab or the
+  // group Message Board) was open underneath.
+  const swipeBackResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        gesture.dx > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dx > 60 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
+          onSwipeBack?.();
+        }
+      },
+    })
+  ).current;
 
   // Owners don't have their own group_members row (see recipient logic in
   // handleSend below), so muting is only offered to actual members for now.
@@ -117,7 +136,7 @@ export default function GroupMessageThread({ groupId }: Props) {
   const fetchLatest = useCallback(async () => {
     const { data, error } = await supabase
       .from('group_messages')
-      .select('id, group_id, sender_id, body, created_at, profiles(full_name, email)')
+      .select('id, group_id, sender_id, body, created_at, profiles(full_name, email, avatar_url)')
       .eq('group_id', groupId)
       .order('created_at', { ascending: false })
       .limit(PAGE_SIZE);
@@ -139,7 +158,7 @@ export default function GroupMessageThread({ groupId }: Props) {
     const oldest = messages[messages.length - 1];
     const { data, error } = await supabase
       .from('group_messages')
-      .select('id, group_id, sender_id, body, created_at, profiles(full_name, email)')
+      .select('id, group_id, sender_id, body, created_at, profiles(full_name, email, avatar_url)')
       .eq('group_id', groupId)
       .lt('created_at', oldest.created_at)
       .order('created_at', { ascending: false })
@@ -178,7 +197,7 @@ export default function GroupMessageThread({ groupId }: Props) {
           if (row.sender_id !== session?.user?.id) {
             supabase
               .from('profiles')
-              .select('full_name, email')
+              .select('full_name, email, avatar_url')
               .eq('id', row.sender_id)
               .single()
               .then(({ data }) => {
@@ -281,7 +300,7 @@ export default function GroupMessageThread({ groupId }: Props) {
   };
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1 }} {...swipeBackResponder.panHandlers}>
       {isMember && (
         <TouchableOpacity onPress={toggleMuted} style={styles.muteRow}>
           <Text style={styles.muteText}>{muted ? '🔕 Muted' : '🔔 Mute'}</Text>
@@ -313,6 +332,7 @@ export default function GroupMessageThread({ groupId }: Props) {
               <MessageBubble
                 isMine={isMine}
                 senderLabel={!isMine ? senderName(item) : undefined}
+                avatarUrl={!isMine ? item.profiles?.avatar_url : undefined}
                 body={item.body}
                 timestamp={new Date(item.created_at).toLocaleTimeString(undefined, {
                   hour: '2-digit',

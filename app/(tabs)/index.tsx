@@ -82,6 +82,16 @@ export default function HomeScreen() {
   const [detailVisible, setDetailVisible] = useState(false);
   const [openViaMessages, setOpenViaMessages] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  // Which month the calendar is currently showing - the default Upcoming
+  // list (no day picked) scopes itself to just this month rather than every
+  // future event forever, and swiping the calendar to another month moves
+  // the list along with it.
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
   const [showDraftsOnly, setShowDraftsOnly] = useState(false);
   const [showDeclinedOnly, setShowDeclinedOnly] = useState(false);
   const [myRsvpByEvent, setMyRsvpByEvent] = useState<Record<string, string>>({});
@@ -422,8 +432,31 @@ export default function HomeScreen() {
     | { kind: "ping"; key: string; date: Date; event: PingEvent }
     | { kind: "external"; key: string; date: Date; event: ExternalEvent };
 
+  // Bounds of the calendar's currently displayed month, used below to cap
+  // the default Upcoming list to one month at a time instead of every
+  // future event forever. Only applies when browsing the plain default
+  // view - a picked day or the Drafts/Declined toggles already scope
+  // themselves and shouldn't also be squeezed into the visible month.
+  const monthStart = visibleMonth;
+  const monthEnd = useMemo(
+    () => new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1),
+    [visibleMonth],
+  );
+  const inVisibleMonth = (start: Date, end: Date | null) =>
+    start < monthEnd && (end ?? start) >= monthStart;
+
   const upcomingListItems = useMemo<UpcomingListItem[]>(() => {
-    const pingItems: UpcomingListItem[] = visibleEvents.map((e) => ({
+    const monthScoped =
+      !selectedDate && !showDraftsOnly && !showDeclinedOnly
+        ? visibleEvents.filter((e) =>
+            inVisibleMonth(
+              new Date(e.event_date),
+              e.end_date ? new Date(e.end_date) : null,
+            ),
+          )
+        : visibleEvents;
+
+    const pingItems: UpcomingListItem[] = monthScoped.map((e) => ({
       kind: "ping",
       key: `ping-${e.id}`,
       date: new Date(e.event_date),
@@ -434,7 +467,7 @@ export default function HomeScreen() {
 
     const dayFiltered = selectedDate
       ? externalEvents.filter((e) => toDateKey(e.startDate) === selectedDate)
-      : externalEvents;
+      : externalEvents.filter((e) => inVisibleMonth(e.startDate, null));
 
     const externalItems: UpcomingListItem[] = dayFiltered.map((e) => ({
       kind: "external",
@@ -446,7 +479,15 @@ export default function HomeScreen() {
     return [...pingItems, ...externalItems].sort(
       (a, b) => a.date.getTime() - b.date.getTime(),
     );
-  }, [visibleEvents, externalEvents, selectedDate, showDraftsOnly, showDeclinedOnly]);
+  }, [
+    visibleEvents,
+    externalEvents,
+    selectedDate,
+    showDraftsOnly,
+    showDeclinedOnly,
+    monthStart,
+    monthEnd,
+  ]);
 
   // The Message Board (unlike the date-sorted Upcoming list above it) reads
   // like a texting app's conversation list - most recently active thread
@@ -857,6 +898,9 @@ export default function HomeScreen() {
         <View style={styles.calendarWrapper} onLayout={handleCalendarLayout}>
           <Calendar
             onDayPress={onDayPress}
+            onMonthChange={(month) =>
+              setVisibleMonth(new Date(month.year, month.month - 1, 1))
+            }
             markedDates={markedDates}
             markingType="custom"
             theme={calendarTheme}

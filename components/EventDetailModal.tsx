@@ -106,7 +106,19 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
               ]}
               pointerEvents={isFlipped ? 'auto' : 'none'}
             >
-              {eventId && <MessageThread eventId={eventId} onFlipBack={toggleFlip} />}
+              {eventId && (
+                <MessageThread
+                  eventId={eventId}
+                  // Opened straight into messages from the Message Board -
+                  // there's no front-of-card details face this trip has
+                  // shown, so swiping/tapping back should leave the modal
+                  // entirely (back to the board) rather than reveal a card
+                  // face the user never asked for. Same reasoning as
+                  // hasShownDetails in app/event/[id].tsx.
+                  onFlipBack={startOnMessages ? handleClose : toggleFlip}
+                  backLabel={startOnMessages ? 'Message Board' : 'Event Details'}
+                />
+              )}
             </Animated.View>
           </View>
 

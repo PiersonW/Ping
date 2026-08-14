@@ -3,12 +3,14 @@ import { Animated, Platform, StyleSheet, Text, TouchableOpacity, View } from 're
 import * as Haptics from 'expo-haptics';
 import { colors } from '../lib/theme';
 import { ReactionCount } from '../lib/useMessageReactions';
+import Avatar from './Avatar';
 
 export type BubbleAnchor = { x: number; y: number; width: number; height: number };
 
 type Props = {
   isMine: boolean;
   senderLabel?: string;
+  avatarUrl?: string | null;
   body: string;
   timestamp: string;
   reactions: ReactionCount[];
@@ -20,6 +22,7 @@ type Props = {
 export default function MessageBubble({
   isMine,
   senderLabel,
+  avatarUrl,
   body,
   timestamp,
   reactions,
@@ -55,6 +58,11 @@ export default function MessageBubble({
 
   return (
     <View style={[styles.bubbleRow, isMine && styles.bubbleRowMine]}>
+      {!isMine && (
+        <View style={styles.avatarSlot}>
+          <Avatar url={avatarUrl} name={senderLabel || '?'} size={26} />
+        </View>
+      )}
       <View style={isMine ? styles.bubbleColumnMine : styles.bubbleColumn}>
         <Animated.View
           ref={bubbleRef}
@@ -94,8 +102,9 @@ export default function MessageBubble({
 }
 
 const styles = StyleSheet.create({
-  bubbleRow: { flexDirection: 'row', width: '100%', marginBottom: 10 },
+  bubbleRow: { flexDirection: 'row', width: '100%', marginBottom: 10, alignItems: 'flex-end' },
   bubbleRowMine: { justifyContent: 'flex-end' },
+  avatarSlot: { marginRight: 6, marginBottom: 2 },
   // Explicit on this inner wrapper too, redundant with bubbleRow's
   // justifyContent - the bubble and its reaction row both need to anchor
   // to the same edge independently of each other's width, not just be

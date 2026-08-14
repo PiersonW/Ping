@@ -19,6 +19,7 @@ import { useAuth } from '../lib/AuthContext';
 import ShareInviteModal from './ShareInviteModal';
 import EditEventModal, { EditableEvent } from './EditEventModal';
 import PhotoViewerModal from './PhotoViewerModal';
+import Avatar from './Avatar';
 import { colors, cardFrameGradient, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
 import { notify } from '../lib/notify';
 import { submitRsvp, RsvpStatus } from '../lib/rsvp';
@@ -81,20 +82,6 @@ type Props = {
   variant?: 'modal' | 'page';
   onOpenMessages?: () => void;
 };
-
-function Avatar({ url, name, size = 28 }: { url: string | null | undefined; name: string; size?: number }) {
-  const initial = (name.trim().charAt(0) || '?').toUpperCase();
-  const dimensionStyle = { width: size, height: size, borderRadius: size / 2 };
-  return (
-    <View style={[styles.avatar, dimensionStyle]}>
-      {url ? (
-        <Image source={{ uri: url }} style={dimensionStyle} />
-      ) : (
-        <Text style={[styles.avatarText, { fontSize: size * 0.45 }]}>{initial}</Text>
-      )}
-    </View>
-  );
-}
 
 export default function EventDetailContent({ eventId, onClose, variant = 'modal', onOpenMessages }: Props) {
   const { session } = useAuth();
@@ -752,13 +739,6 @@ const styles = StyleSheet.create({
   description: { color: colors.textPrimary, fontSize: 15, lineHeight: 21, marginTop: 10 },
   hostRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
   hostText: { color: colors.textSecondary, fontSize: 14 },
-  avatar: {
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  avatarText: { color: colors.textOnPrimary, fontWeight: '700' },
   visibilityRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 12 },
   visibilityBadge: { borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
   publicBadge: { backgroundColor: '#DFF3E0' },

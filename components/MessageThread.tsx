@@ -28,15 +28,16 @@ type Message = {
   sender_id: string;
   body: string;
   created_at: string;
-  profiles: { full_name: string | null; email: string | null } | null;
+  profiles: { full_name: string | null; email: string | null; avatar_url: string | null } | null;
 };
 
 type Props = {
   eventId: string;
   onFlipBack: () => void;
+  backLabel?: string;
 };
 
-export default function MessageThread({ eventId, onFlipBack }: Props) {
+export default function MessageThread({ eventId, onFlipBack, backLabel = 'Event Details' }: Props) {
   const { session } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -128,7 +129,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
   const fetchLatest = useCallback(async () => {
     const { data, error } = await supabase
       .from('messages')
-      .select('id, event_id, sender_id, body, created_at, profiles(full_name, email)')
+      .select('id, event_id, sender_id, body, created_at, profiles(full_name, email, avatar_url)')
       .eq('event_id', eventId)
       .order('created_at', { ascending: false })
       .limit(PAGE_SIZE);
@@ -150,7 +151,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     const oldest = messages[messages.length - 1];
     const { data, error } = await supabase
       .from('messages')
-      .select('id, event_id, sender_id, body, created_at, profiles(full_name, email)')
+      .select('id, event_id, sender_id, body, created_at, profiles(full_name, email, avatar_url)')
       .eq('event_id', eventId)
       .lt('created_at', oldest.created_at)
       .order('created_at', { ascending: false })
@@ -189,7 +190,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
           if (row.sender_id !== session?.user?.id) {
             supabase
               .from('profiles')
-              .select('full_name, email')
+              .select('full_name, email, avatar_url')
               .eq('id', row.sender_id)
               .single()
               .then(({ data }) => {
@@ -262,7 +263,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
     <View style={{ flex: 1 }} {...swipeBackResponder.panHandlers}>
       <View style={styles.topRow}>
         <TouchableOpacity onPress={onFlipBack} style={styles.backButton}>
-          <Text style={styles.backText}>‹ Event Details</Text>
+          <Text style={styles.backText}>‹ {backLabel}</Text>
         </TouchableOpacity>
         {myInviteeId && (
           <TouchableOpacity onPress={toggleMuted}>
@@ -298,6 +299,7 @@ export default function MessageThread({ eventId, onFlipBack }: Props) {
               <MessageBubble
                 isMine={isMine}
                 senderLabel={!isMine ? senderName(item) : undefined}
+                avatarUrl={!isMine ? item.profiles?.avatar_url : undefined}
                 body={item.body}
                 timestamp={new Date(item.created_at).toLocaleTimeString(undefined, {
                   hour: '2-digit',

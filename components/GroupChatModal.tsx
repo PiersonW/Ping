@@ -73,7 +73,9 @@ export default function GroupChatModal({ visible, groupId, groupName, onClose }:
             </TouchableOpacity>
           </View>
 
-          <View style={{ flex: 1 }}>{groupId && <GroupMessageThread groupId={groupId} />}</View>
+          <View style={{ flex: 1 }}>
+            {groupId && <GroupMessageThread groupId={groupId} onSwipeBack={onClose} />}
+          </View>
         </Animated.View>
       </View>
     </Modal>
