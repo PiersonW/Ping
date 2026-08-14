@@ -10,6 +10,13 @@ export type BubbleAnchor = { x: number; y: number; width: number; height: number
 type Props = {
   isMine: boolean;
   senderLabel?: string;
+  // Whether to render the name text above the bubble - senderLabel itself
+  // is still needed even when this is false, since Avatar falls back to it
+  // for the initial shown when there's no photo. Consecutive messages from
+  // the same sender pass senderLabel (for the avatar) but showSenderName:
+  // false (no repeated name line) - see MessageThread.tsx/
+  // GroupMessageThread.tsx.
+  showSenderName?: boolean;
   avatarUrl?: string | null;
   body: string;
   timestamp: string;
@@ -22,6 +29,7 @@ type Props = {
 export default function MessageBubble({
   isMine,
   senderLabel,
+  showSenderName = true,
   avatarUrl,
   body,
   timestamp,
@@ -75,9 +83,13 @@ export default function MessageBubble({
             onLongPress={handleLongPress}
             delayLongPress={280}
           >
-            {!isMine && senderLabel && <Text style={styles.senderName}>{senderLabel}</Text>}
+            {!isMine && showSenderName && senderLabel && (
+              <Text style={styles.senderName} numberOfLines={1}>{senderLabel}</Text>
+            )}
             <Text style={[styles.bubbleText, isMine && styles.bubbleTextMine]}>{body}</Text>
-            <Text style={[styles.timestamp, isMine && styles.timestampMine]}>{timestamp}</Text>
+            <Text style={[styles.timestamp, isMine && styles.timestampMine]} numberOfLines={1}>
+              {timestamp}
+            </Text>
           </TouchableOpacity>
         </Animated.View>
         {reactions.length > 0 && (
@@ -129,10 +141,10 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
-  senderName: { color: colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 2 },
+  senderName: { color: colors.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 },
   bubbleText: { color: colors.textPrimary, fontSize: 15 },
   bubbleTextMine: { color: colors.textOnPrimary },
-  timestamp: { color: colors.textMuted, fontSize: 10, marginTop: 4, textAlign: 'right' },
+  timestamp: { color: colors.textMuted, fontSize: 10, marginTop: 6, textAlign: 'right' },
   timestampMine: { color: 'rgba(255,255,255,0.75)' },
   reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
   reactionRowMine: { justifyContent: 'flex-end' },

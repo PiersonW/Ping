@@ -108,8 +108,11 @@ export default function MessageThread({ eventId, onFlipBack, backLabel = 'Event 
     }
   };
 
+  // First name only - the full "First Last" name was wide enough to wrap
+  // to its own second line above short messages, which is most of what
+  // made the thread look cramped/stacked.
   const senderName = (m: Message) =>
-    m.sender_id === session?.user?.id ? 'You' : displayName(m.profiles, 'Someone');
+    m.sender_id === session?.user?.id ? 'You' : displayName(m.profiles, 'Someone').split(' ')[0];
 
   // KeyboardAvoidingView is unreliable inside this component's nested,
   // animated (flip-card) ancestor chain - it was observed collapsing the
@@ -318,7 +321,8 @@ export default function MessageThread({ eventId, onFlipBack, backLabel = 'Event 
             return (
               <MessageBubble
                 isMine={isMine}
-                senderLabel={showSenderLabel ? senderName(item) : undefined}
+                senderLabel={!isMine ? senderName(item) : undefined}
+                showSenderName={showSenderLabel}
                 avatarUrl={!isMine ? item.profiles?.avatar_url : undefined}
                 body={item.body}
                 timestamp={new Date(item.created_at).toLocaleTimeString(undefined, {

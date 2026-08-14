@@ -115,8 +115,9 @@ export default function GroupMessageThread({ groupId, onSwipeBack }: Props) {
     }
   };
 
+  // First name only - see the matching note in MessageThread.tsx.
   const senderName = (m: GroupMessage) =>
-    m.sender_id === session?.user?.id ? 'You' : displayName(m.profiles, 'Someone');
+    m.sender_id === session?.user?.id ? 'You' : displayName(m.profiles, 'Someone').split(' ')[0];
 
   // Same keyboard-tracking gotcha as MessageThread.tsx: KeyboardAvoidingView
   // is unreliable inside this app's nested/animated ancestor chains, so we
@@ -344,7 +345,8 @@ export default function GroupMessageThread({ groupId, onSwipeBack }: Props) {
             return (
               <MessageBubble
                 isMine={isMine}
-                senderLabel={showSenderLabel ? senderName(item) : undefined}
+                senderLabel={!isMine ? senderName(item) : undefined}
+                showSenderName={showSenderLabel}
                 avatarUrl={!isMine ? item.profiles?.avatar_url : undefined}
                 body={item.body}
                 timestamp={new Date(item.created_at).toLocaleTimeString(undefined, {
