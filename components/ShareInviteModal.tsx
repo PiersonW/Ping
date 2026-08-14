@@ -18,6 +18,7 @@ import { sendSmsInvites } from '../lib/sms';
 import { colors } from '../lib/theme';
 import { notify } from '../lib/notify';
 import ImportContactsModal from './ImportContactsModal';
+import NonAppInviteQueue, { QueueContact } from './NonAppInviteQueue';
 
 type Contact = {
   id: string;
@@ -54,6 +55,8 @@ export default function ShareInviteModal({
   const [newContactPhone, setNewContactPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [importVisible, setImportVisible] = useState(false);
+  const [queueContacts, setQueueContacts] = useState<QueueContact[]>([]);
+  const [queueVisible, setQueueVisible] = useState(false);
 
   useEffect(() => {
     if (visible && session?.user?.id) {
@@ -181,8 +184,17 @@ export default function ShareInviteModal({
       eventId,
       type: 'invite',
     });
+
+    let smsQueueItems: QueueContact[] = [];
     if (eventDate) {
       sendSmsInvites(insertedInvitees || [], healedContacts, eventTitle || 'An event', new Date(eventDate), location || '');
+      smsQueueItems = (insertedInvitees || [])
+        .filter((r) => r.invited_via === 'sms' && r.contact_id)
+        .map((r) => {
+          const contact = healedContacts.find((c) => c?.id === r.contact_id);
+          return contact?.phone ? { inviteeId: r.id, name: contact.name, phone: contact.phone } : null;
+        })
+        .filter((c): c is QueueContact => !!c);
     }
 
     if (skippedNames.length > 0) {
@@ -192,7 +204,14 @@ export default function ShareInviteModal({
       );
     }
 
-    onInvited();
+    // Same-app-only invites skip straight to onInvited (unchanged flow) -
+    // the queue only interrupts when there's actually someone to text.
+    if (smsQueueItems.length > 0) {
+      setQueueContacts(smsQueueItems);
+      setQueueVisible(true);
+    } else {
+      onInvited();
+    }
   };
 
   return (
@@ -280,6 +299,18 @@ export default function ShareInviteModal({
         visible={importVisible}
         onClose={() => setImportVisible(false)}
         onImported={handleImported}
+      />
+
+      <NonAppInviteQueue
+        visible={queueVisible}
+        contacts={queueContacts}
+        eventTitle={eventTitle || 'An event'}
+        eventDate={new Date(eventDate || Date.now())}
+        location={location || ''}
+        onDone={() => {
+          setQueueVisible(false);
+          onInvited();
+        }}
       />
     </Modal>
   );

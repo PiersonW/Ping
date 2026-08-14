@@ -34,6 +34,32 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
     }
   }, [visible, startOnMessages]);
 
+  const toggleFlip = () => {
+    Animated.timing(flipAnim, {
+      toValue: isFlipped ? 0 : 180,
+      duration: 450,
+      useNativeDriver: true,
+    }).start();
+    setIsFlipped(!isFlipped);
+  };
+
+  // Leftward swipe on the front face flips to messages, same destination as
+  // tapping the 💬 bubble - only claims the gesture once movement is clearly
+  // horizontal (not a vertical scroll of the card's content), matching the
+  // rightward swipe-back gesture in MessageThread.tsx.
+  const swipeToMessagesResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        gesture.dx < -12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      onPanResponderRelease: (_, gesture) => {
+        if (!isFlipped && gesture.dx < -60 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
+          toggleFlip();
+        }
+      },
+    })
+  ).current;
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -57,15 +83,6 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
       },
     })
   ).current;
-
-  const toggleFlip = () => {
-    Animated.timing(flipAnim, {
-      toValue: isFlipped ? 0 : 180,
-      duration: 450,
-      useNativeDriver: true,
-    }).start();
-    setIsFlipped(!isFlipped);
-  };
 
   const handleClose = () => {
     if (isFlipped) {
@@ -94,6 +111,7 @@ export default function EventDetailModal({ visible, eventId, onClose, startOnMes
             <Animated.View
               style={[styles.face, { transform: [{ perspective: 1000 }, { rotateY: frontRotateY }] }]}
               pointerEvents={isFlipped ? 'none' : 'auto'}
+              {...swipeToMessagesResponder.panHandlers}
             >
               {eventId && <EventDetailContent eventId={eventId} onClose={handleClose} variant="modal" />}
             </Animated.View>

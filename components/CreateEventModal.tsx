@@ -29,6 +29,7 @@ import { colors, cardFrameGradient, calendarTheme, EVENT_IMAGE_ASPECT_RATIO } fr
 import { notify } from '../lib/notify';
 import ImportContactsModal from './ImportContactsModal';
 import ImageCropModal from './ImageCropModal';
+import NonAppInviteQueue, { QueueContact } from './NonAppInviteQueue';
 
 type Contact = {
   id: string;
@@ -92,6 +93,9 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   const [newContactName, setNewContactName] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
   const [importVisible, setImportVisible] = useState(false);
+  const [queueContacts, setQueueContacts] = useState<QueueContact[]>([]);
+  const [queueVisible, setQueueVisible] = useState(false);
+  const [pendingFinishStatus, setPendingFinishStatus] = useState<'sent' | 'draft' | null>(null);
 
   const [items, setItems] = useState<{ name: string; qty: string; allowCustom: boolean }[]>([]);
   const [newItemName, setNewItemName] = useState('');
@@ -522,6 +526,7 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
       if (itemsError) console.error('Error creating items:', itemsError);
     }
 
+    let smsQueueItems: QueueContact[] = [];
     if (status === 'sent') {
       const contactIds = resolveInviteeContactIds();
       if (contactIds.length > 0) {
@@ -558,13 +563,30 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
             type: 'invite',
           });
           sendSmsInvites(insertedInvitees || [], healedContacts, title, eventDate, location);
+          smsQueueItems = (insertedInvitees || [])
+            .filter((r) => r.invited_via === 'sms' && r.contact_id)
+            .map((r) => {
+              const contact = healedContacts.find((c) => c?.id === r.contact_id);
+              return contact?.phone ? { inviteeId: r.id, name: contact.name, phone: contact.phone } : null;
+            })
+            .filter((c): c is QueueContact => !!c);
         }
       }
     }
 
     setSubmitting(false);
-    resetForm();
-    onCreated(status);
+
+    // Same-app-only invites (or drafts, with no invitees at all) skip
+    // straight to finishing - the queue only interrupts when there's
+    // actually someone to text.
+    if (smsQueueItems.length > 0) {
+      setPendingFinishStatus(status);
+      setQueueContacts(smsQueueItems);
+      setQueueVisible(true);
+    } else {
+      resetForm();
+      onCreated(status);
+    }
   };
 
   return (
@@ -950,6 +972,19 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
       </KeyboardAvoidingView>
 
       <ImportContactsModal visible={importVisible} onClose={() => setImportVisible(false)} onImported={handleImported} />
+
+      <NonAppInviteQueue
+        visible={queueVisible}
+        contacts={queueContacts}
+        eventTitle={title || 'An event'}
+        eventDate={eventDate}
+        location={location}
+        onDone={() => {
+          setQueueVisible(false);
+          resetForm();
+          if (pendingFinishStatus) onCreated(pendingFinishStatus);
+        }}
+      />
 
       <ImageCropModal
         visible={cropModalVisible}
