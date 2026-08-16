@@ -29,6 +29,7 @@ import { isMultiDayEvent } from '../lib/eventDate';
 import { notify } from '../lib/notify';
 import ImportContactsModal from './ImportContactsModal';
 import ImageCropModal from './ImageCropModal';
+import NonAppInviteQueue, { QueueContact } from './NonAppInviteQueue';
 
 type Contact = {
   id: string;
@@ -114,6 +115,8 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
   const [newContactName, setNewContactName] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
   const [importVisible, setImportVisible] = useState(false);
+  const [queueContacts, setQueueContacts] = useState<QueueContact[]>([]);
+  const [queueVisible, setQueueVisible] = useState(false);
 
   const [items, setItems] = useState<{ id: string; name: string; qty: string; allowCustom: boolean }[]>([]);
   const [newItemName, setNewItemName] = useState('');
@@ -648,6 +651,7 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
 
     // Newly selected people get invited whether this is the draft's first
     // send or just adding more people to an event that already went out.
+    let smsQueueItems: QueueContact[] = [];
     const contactIds = resolveInviteeContactIds();
     if (contactIds.length > 0) {
       const { data: existingInvitees } = await supabase
@@ -688,7 +692,10 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
             invited_via: contact?.linked_user_id ? 'app' : contact?.phone ? 'sms' : 'email',
           };
         });
-        const { error: inviteeError } = await supabase.from('invitees').insert(rows);
+        const { data: insertedInvitees, error: inviteeError } = await supabase
+          .from('invitees')
+          .insert(rows)
+          .select();
         if (inviteeError) {
           console.error('Error creating invitees:', inviteeError);
         } else {
@@ -697,12 +704,27 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
             eventId: event.id,
             type: 'invite',
           });
+          smsQueueItems = (insertedInvitees || [])
+            .filter((r) => r.invited_via === 'sms' && r.contact_id)
+            .map((r) => {
+              const contact = healedContacts.find((c) => c?.id === r.contact_id);
+              return contact?.phone ? { inviteeId: r.id, name: contact.name, phone: contact.phone } : null;
+            })
+            .filter((c): c is QueueContact => !!c);
         }
       }
     }
 
     setSubmitting(false);
-    onSaved();
+
+    // Same as CreateEventModal - only interrupt with the texting flow when
+    // there's actually someone to text.
+    if (smsQueueItems.length > 0) {
+      setQueueContacts(smsQueueItems);
+      setQueueVisible(true);
+    } else {
+      onSaved();
+    }
   };
 
   const handleDeleteEvent = async (shouldNotify: boolean) => {
@@ -1192,6 +1214,16 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       </KeyboardAvoidingView>
 
       <ImportContactsModal visible={importVisible} onClose={() => setImportVisible(false)} onImported={handleImported} />
+
+      <NonAppInviteQueue
+        visible={queueVisible}
+        contacts={queueContacts}
+        eventTitle={title || event.title}
+        eventDate={eventDate}
+        location={location}
+        onDone={() => setQueueVisible(false)}
+        onClosed={onSaved}
+      />
 
       <ImageCropModal
         visible={cropModalVisible}

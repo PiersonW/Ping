@@ -18,6 +18,7 @@ import { supabase } from '../supabase';
 import { useAuth } from '../lib/AuthContext';
 import ShareInviteModal from './ShareInviteModal';
 import EditEventModal, { EditableEvent } from './EditEventModal';
+import NonAppInviteQueue, { QueueContact } from './NonAppInviteQueue';
 import PhotoViewerModal from './PhotoViewerModal';
 import Avatar from './Avatar';
 import { colors, cardFrameGradient, EVENT_IMAGE_ASPECT_RATIO } from '../lib/theme';
@@ -47,8 +48,9 @@ type InviteeRow = {
   user_id: string | null;
   rsvp_status: RsvpStatus;
   reminder_minutes_before: number | null;
+  invited_via: string | null;
   profiles: { full_name: string | null; email: string | null; avatar_url: string | null } | null;
-  contacts: { name: string | null } | null;
+  contacts: { name: string | null; phone: string | null } | null;
 };
 
 type HostProfile = { full_name: string | null; email: string | null; avatar_url: string | null };
@@ -100,9 +102,20 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
+  const [smsQueueVisible, setSmsQueueVisible] = useState(false);
 
   const myInvitee = invitees.find((inv) => inv.user_id === session?.user?.id) || null;
   const isHost = event?.host_id === session?.user?.id;
+
+  // Invitees texted via the host's own Messages app (see NonAppInviteQueue)
+  // have no reliable "was it actually sent" signal - closing that flow with
+  // "Finish later" (or backgrounding mid-flow) just leaves these invitee
+  // rows sitting here with no linked account. Surfacing them again on the
+  // event itself is what makes "finish later" actually resumable, instead
+  // of the reminder vanishing the moment that modal closes.
+  const pendingSmsInvitees: QueueContact[] = invitees
+    .filter((inv) => inv.invited_via === 'sms' && !inv.user_id && inv.contacts?.phone)
+    .map((inv) => ({ inviteeId: inv.id, name: inv.contacts?.name || 'Guest', phone: inv.contacts!.phone! }));
 
   const inviteeName = (inv: InviteeRow) =>
     inv.profiles?.full_name || inv.contacts?.name || displayName(inv.profiles);
@@ -123,7 +136,7 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
         supabase.from('events').select('*').eq('id', eventId).single(),
         supabase
           .from('invitees')
-          .select('id, user_id, rsvp_status, reminder_minutes_before, profiles(full_name, email, avatar_url), contacts(name)')
+          .select('id, user_id, rsvp_status, reminder_minutes_before, invited_via, profiles(full_name, email, avatar_url), contacts(name, phone)')
           .eq('event_id', eventId),
         supabase
           .from('items')
@@ -229,6 +242,39 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
     } else {
       await scheduleEventReminder(session.user.id, event.id, event.title, new Date(event.event_date), minutesBefore);
     }
+  };
+
+  const setInviteeRsvp = async (inviteeId: string, status: RsvpStatus) => {
+    const previous = invitees;
+    setInvitees((prev) =>
+      prev.map((inv) => (inv.id === inviteeId ? { ...inv, rsvp_status: status } : inv))
+    );
+
+    const { error } = await supabase
+      .from('invitees')
+      .update({ rsvp_status: status, responded_at: status === 'pending' ? null : new Date().toISOString() })
+      .eq('id', inviteeId);
+    if (error) {
+      console.error('Error updating RSVP:', error);
+      setInvitees(previous);
+      Alert.alert('Error', "Could not update that person's response.");
+    }
+  };
+
+  const handleHostRsvpPress = (inv: InviteeRow) => {
+    Alert.alert(
+      inviteeName(inv),
+      "This person doesn't have Ping — update their response based on what they told you.",
+      [
+        { text: 'Accepted', onPress: () => setInviteeRsvp(inv.id, 'accepted') },
+        { text: 'Interested', onPress: () => setInviteeRsvp(inv.id, 'interested') },
+        { text: 'Declined', onPress: () => setInviteeRsvp(inv.id, 'declined') },
+        ...(inv.rsvp_status !== 'pending'
+          ? [{ text: 'Reset to Pending', onPress: () => setInviteeRsvp(inv.id, 'pending' as RsvpStatus) }]
+          : []),
+        { text: 'Cancel', style: 'cancel' as const },
+      ]
+    );
   };
 
   const handleAddItem = async () => {
@@ -482,18 +528,45 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
           </Text>
         </View>
 
+        {isHost && pendingSmsInvitees.length > 0 && (
+          <TouchableOpacity style={styles.smsReminderBanner} onPress={() => setSmsQueueVisible(true)}>
+            <Text style={styles.smsReminderText}>
+              {pendingSmsInvitees.length === 1
+                ? `${pendingSmsInvitees[0].name} still needs a text invite`
+                : `${pendingSmsInvitees.length} people still need a text invite`}
+            </Text>
+            <Text style={styles.smsReminderAction}>Send now</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={styles.guestList}>
-          {invitees.map((inv) => (
-            <View key={inv.id} style={styles.guestRow}>
-              <View style={styles.guestIdentity}>
-                <Avatar url={inv.profiles?.avatar_url} name={inviteeName(inv)} size={28} />
-                <Text style={styles.guestName}>{inviteeName(inv)}</Text>
-              </View>
-              <Text style={[styles.guestStatus, styles[`status_${inv.rsvp_status}` as const]]}>
-                {inv.rsvp_status}
-              </Text>
-            </View>
-          ))}
+          {invitees.map((inv) => {
+            // Invitees with no linked account can't RSVP in-app - they told
+            // the host by whatever channel actually reached them (a text
+            // back, in person, etc). Letting the host set it manually here
+            // is the only way that answer ever gets reflected anywhere.
+            const hostCanSetRsvp = isHost && !inv.user_id;
+            return (
+              <TouchableOpacity
+                key={inv.id}
+                style={styles.guestRow}
+                activeOpacity={hostCanSetRsvp ? 0.6 : 1}
+                disabled={!hostCanSetRsvp}
+                onPress={() => handleHostRsvpPress(inv)}
+              >
+                <View style={styles.guestIdentity}>
+                  <Avatar url={inv.profiles?.avatar_url} name={inviteeName(inv)} size={28} />
+                  <Text style={styles.guestName}>{inviteeName(inv)}</Text>
+                </View>
+                <View style={styles.guestStatusRow}>
+                  <Text style={[styles.guestStatus, styles[`status_${inv.rsvp_status}` as const]]}>
+                    {inv.rsvp_status}
+                  </Text>
+                  {hostCanSetRsvp && <Text style={styles.guestStatusEditIcon}>✎</Text>}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
           {invitees.length === 0 && <Text style={styles.emptyText}>No responses yet.</Text>}
         </View>
 
@@ -648,6 +721,15 @@ export default function EventDetailContent({ eventId, onClose, variant = 'modal'
         </TouchableOpacity>
       )}
 
+      <NonAppInviteQueue
+        visible={smsQueueVisible}
+        contacts={pendingSmsInvitees}
+        eventTitle={event.title}
+        eventDate={new Date(event.event_date)}
+        location={event.location}
+        onDone={() => setSmsQueueVisible(false)}
+      />
+
       <ShareInviteModal
         visible={shareModalVisible}
         eventId={event.id}
@@ -763,6 +845,18 @@ const styles = StyleSheet.create({
   rsvpButtonTextSelected: { color: colors.textOnPrimary },
   notInvitedText: { color: colors.textMuted, fontSize: 14, fontStyle: 'italic' },
   summarySection: { marginTop: 28 },
+  smsReminderBanner: {
+    marginTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  smsReminderText: { flex: 1, color: colors.textPrimary, fontSize: 14, fontWeight: '600', marginRight: 12 },
+  smsReminderAction: { color: colors.primary, fontSize: 14, fontWeight: '700' },
   guestList: { marginTop: 12, gap: 10 },
   guestRow: {
     flexDirection: 'row',
@@ -774,7 +868,9 @@ const styles = StyleSheet.create({
   },
   guestIdentity: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
   guestName: { color: colors.textPrimary, fontSize: 15, flexShrink: 1 },
+  guestStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   guestStatus: { fontSize: 13, fontWeight: '600', textTransform: 'capitalize' },
+  guestStatusEditIcon: { fontSize: 12, color: colors.textMuted },
   status_accepted: { color: colors.success },
   status_interested: { color: colors.warning },
   status_declined: { color: colors.danger },

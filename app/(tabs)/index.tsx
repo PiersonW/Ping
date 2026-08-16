@@ -7,6 +7,7 @@ import React, {
   useState,
 } from "react";
 import {
+  Alert,
   FlatList,
   LayoutChangeEvent,
   RefreshControl,
@@ -26,6 +27,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
+import AddPersonalItemModal from "../../components/AddPersonalItemModal";
 import CompactEventRow from "../../components/CompactEventRow";
 import CompactGroupRow, { PingGroup } from "../../components/CompactGroupRow";
 import CreateEventModal from "../../components/CreateEventModal";
@@ -77,6 +79,8 @@ export default function HomeScreen() {
   const [events, setEvents] = useState<PingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
+  const [personalItemModalVisible, setPersonalItemModalVisible] = useState(false);
+  const [editingPersonalEvent, setEditingPersonalEvent] = useState<ExternalEvent | null>(null);
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
@@ -239,6 +243,14 @@ export default function HomeScreen() {
     });
   }, [fetchExternalEvents]);
 
+  const handleFabPress = () => {
+    Alert.alert("New", undefined, [
+      { text: "Add Personal Item", onPress: () => setPersonalItemModalVisible(true) },
+      { text: "Create a Ping", onPress: () => setModalVisible(true) },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
   const handleEnableExternalCalendar = async () => {
     const granted = await requestCalendarAccess();
     setCalendarPermission(granted ? "granted" : "denied");
@@ -379,6 +391,19 @@ export default function HomeScreen() {
         };
       }
     });
+    // Phone-calendar and personal items get a small dot instead of the big
+    // circle above - only on days with no Ping event of their own, so it
+    // reads as "something smaller is here too" rather than competing with
+    // the circle for attention. `marked`/`dotColor` render via
+    // react-native-calendars' built-in dot regardless of markingType, so
+    // this coexists with the customStyles-driven circle/bar logic above
+    // without needing a custom day renderer.
+    externalEvents.forEach((e) => {
+      const key = toDateKey(e.startDate);
+      if (!marks[key]) {
+        marks[key] = { marked: true, dotColor: colors.primary };
+      }
+    });
     if (selectedDate) {
       marks[selectedDate] = {
         ...(marks[selectedDate] || {}),
@@ -400,7 +425,7 @@ export default function HomeScreen() {
       },
     };
     return marks;
-  }, [declinedFilteredEvents, selectedDate]);
+  }, [declinedFilteredEvents, externalEvents, selectedDate]);
 
   const visibleEvents = useMemo(() => {
     let result = declinedFilteredEvents;
@@ -953,7 +978,10 @@ export default function HomeScreen() {
                   rsvpStatus={myRsvpByEvent[item.event.id] as any}
                 />
               ) : (
-                <ExternalEventRow event={item.event} />
+                <ExternalEventRow
+                  event={item.event}
+                  onEdit={item.event.isPersonal ? () => setEditingPersonalEvent(item.event) : undefined}
+                />
               )
             }
             ListEmptyComponent={
@@ -1042,7 +1070,7 @@ export default function HomeScreen() {
 
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => setModalVisible(true)}
+        onPress={handleFabPress}
         activeOpacity={0.85}
       >
         <Text style={styles.fabPlus}>+</Text>
@@ -1053,6 +1081,22 @@ export default function HomeScreen() {
         onClose={() => setModalVisible(false)}
         onCreated={handleCreated}
         initialDate={selectedDate}
+      />
+
+      <AddPersonalItemModal
+        visible={personalItemModalVisible || !!editingPersonalEvent}
+        editingEvent={editingPersonalEvent}
+        initialDate={selectedDate}
+        onClose={() => {
+          setPersonalItemModalVisible(false);
+          setEditingPersonalEvent(null);
+        }}
+        onSaved={async () => {
+          setPersonalItemModalVisible(false);
+          setEditingPersonalEvent(null);
+          setCalendarPermission("granted");
+          await fetchExternalEvents();
+        }}
       />
 
       <EventDetailModal
