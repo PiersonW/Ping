@@ -9,10 +9,11 @@ type Props = {
 };
 
 // Deliberately plain (no card, no border) so a phone-calendar event reads as
-// a quick reference line rather than something Ping actually knows about or
-// can act on. The one exception is a personal item Ping itself wrote to the
-// calendar (see createPersonalCalendarEvent) — those get a pencil and a tap
-// target so they can be edited or deleted later.
+// a quick reference line rather than a full Ping event. Anything on a
+// writable calendar (see ExternalEvent.editable) still gets a pencil and a
+// tap target so it can be edited or deleted from here - personal items
+// Ping wrote itself, or any other calendar event the user can already
+// edit in their own Calendar app.
 export default function ExternalEventRow({ event, onEdit }: Props) {
   const dateLabel = event.startDate.toLocaleDateString(undefined, {
     weekday: 'short',
@@ -23,7 +24,7 @@ export default function ExternalEventRow({ event, onEdit }: Props) {
     ? 'All day'
     : event.startDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
-  const editable = event.isPersonal && !!onEdit;
+  const editable = event.editable && !!onEdit;
 
   return (
     <TouchableOpacity

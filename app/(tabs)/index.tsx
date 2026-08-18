@@ -9,7 +9,6 @@ import React, {
 import {
   FlatList,
   LayoutChangeEvent,
-  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -974,7 +973,7 @@ export default function HomeScreen() {
               ) : (
                 <ExternalEventRow
                   event={item.event}
-                  onEdit={item.event.isPersonal ? () => setEditingPersonalEvent(item.event) : undefined}
+                  onEdit={item.event.editable ? () => setEditingPersonalEvent(item.event) : undefined}
                 />
               )
             }
@@ -1062,6 +1061,13 @@ export default function HomeScreen() {
         </Animated.View>
       </View>
 
+      {fabMenuVisible && (
+        <Pressable
+          style={styles.fabMenuBackdrop}
+          onPress={() => setFabMenuVisible(false)}
+        />
+      )}
+
       <TouchableOpacity
         style={styles.fab}
         onPress={() => setFabMenuVisible(true)}
@@ -1070,36 +1076,26 @@ export default function HomeScreen() {
         <Text style={styles.fabPlus}>+</Text>
       </TouchableOpacity>
 
-      <Modal
-        visible={fabMenuVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFabMenuVisible(false)}
-      >
-        <Pressable style={styles.fabMenuBackdrop} onPress={() => setFabMenuVisible(false)}>
-          <View style={styles.fabMenu}>
-            <TouchableOpacity
-              style={styles.fabMenuItem}
-              onPress={() => {
-                setFabMenuVisible(false);
-                setPersonalItemModalVisible(true);
-              }}
-            >
-              <Text style={styles.fabMenuItemText}>Add Personal Item</Text>
-            </TouchableOpacity>
-            <View style={styles.fabMenuDivider} />
-            <TouchableOpacity
-              style={styles.fabMenuItem}
-              onPress={() => {
-                setFabMenuVisible(false);
-                setModalVisible(true);
-              }}
-            >
-              <Text style={styles.fabMenuItemText}>Create a Ping</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
+      {fabMenuVisible && (
+        <View style={styles.fabMenuItems} pointerEvents="box-none">
+          <TouchableOpacity
+            onPress={() => {
+              setFabMenuVisible(false);
+              setPersonalItemModalVisible(true);
+            }}
+          >
+            <Text style={styles.fabMenuItemText}>Add Personal Item</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setFabMenuVisible(false);
+              setModalVisible(true);
+            }}
+          >
+            <Text style={styles.fabMenuItemText}>Create a Ping</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <CreateEventModal
         visible={modalVisible}
@@ -1256,24 +1252,28 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     marginTop: -2,
   },
-  fabMenuBackdrop: { flex: 1, backgroundColor: "rgba(43,43,43,0.4)" },
-  fabMenu: {
+  fabMenuBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(43,43,43,0.45)",
+  },
+  fabMenuItems: {
     position: "absolute",
     right: 24,
     bottom: 116,
-    minWidth: 190,
-    backgroundColor: colors.background,
-    borderRadius: 14,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: colors.textPrimary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    alignItems: "flex-end",
+    gap: 20,
   },
-  fabMenuItem: { paddingHorizontal: 18, paddingVertical: 14 },
-  fabMenuItemText: { color: colors.textPrimary, fontSize: 16, fontWeight: "700" },
-  fabMenuDivider: { height: 1, backgroundColor: colors.divider, marginHorizontal: 10 },
+  fabMenuItemText: {
+    color: colors.textOnPrimary,
+    fontSize: 17,
+    fontWeight: "700",
+    paddingVertical: 6,
+    textShadowColor: "rgba(0,0,0,0.35)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
 });

@@ -22,14 +22,28 @@ export type ExternalEvent = {
   startDate: Date;
   endDate: Date;
   allDay: boolean;
-  // True for events Ping itself wrote (see createPersonalCalendarEvent) -
-  // those live in their own dedicated device calendar, so they're the only
-  // ExternalEvents safe to offer editing/deleting on. Everything else here
-  // came from a calendar the user manages themselves.
+  // True for events Ping itself wrote (see createPersonalCalendarEvent).
+  // Detected via a dedicated device calendar when creating one succeeded,
+  // or a note marker when it fell back to some other writable calendar
+  // (see PING_NOTE_MARKER). Governs edit-form messaging and whether the
+  // marker gets (re)written on save - not whether editing is allowed at
+  // all, see `editable` for that.
   isPersonal: boolean;
+  // Whether the calendar this event lives on accepts writes at all (some
+  // subscriptions, holiday calendars, and read-only shared calendars
+  // don't). Editing/deleting a non-personal event still changes the real
+  // event wherever it's synced from (Google, iCloud, a shared family
+  // calendar) - it's not private to Ping the way a personal item is.
+  editable: boolean;
 };
 
 const PING_CALENDAR_TITLE = 'Ping';
+// Whether a personal item ends up in its own dedicated calendar (below) or
+// falls back to some other writable one, this note is what makes it
+// findable as "Ping's to edit" either way - calendar identity alone isn't
+// reliable since calendar creation can fail on devices where every synced
+// account refuses new calendars.
+const PING_NOTE_MARKER = 'Added via Ping';
 
 export async function getCalendarPermissionStatus(): Promise<CalendarPermissionStatus> {
   const { status } = await Calendar.getCalendarPermissionsAsync();
@@ -67,6 +81,9 @@ export async function getUpcomingExternalEvents(): Promise<ExternalEvent[]> {
   const pingCalendarIds = new Set(
     calendars.filter((c) => c.title === PING_CALENDAR_TITLE).map((c) => c.id)
   );
+  const writableCalendarIds = new Set(
+    calendars.filter((c) => c.allowsModifications).map((c) => c.id)
+  );
 
   const windowStart = new Date();
   const windowEnd = new Date(windowStart.getTime() + UPCOMING_WINDOW_DAYS * 24 * 60 * 60000);
@@ -81,7 +98,8 @@ export async function getUpcomingExternalEvents(): Promise<ExternalEvent[]> {
       startDate: new Date(e.startDate),
       endDate: new Date(e.endDate),
       allDay: !!e.allDay,
-      isPersonal: pingCalendarIds.has(e.calendarId),
+      isPersonal: pingCalendarIds.has(e.calendarId) || (e.notes || '').includes(PING_NOTE_MARKER),
+      editable: writableCalendarIds.has(e.calendarId),
     }));
 }
 
@@ -151,19 +169,29 @@ export async function createPersonalCalendarEvent(
   allDay: boolean
 ): Promise<void> {
   const calendarId = await getOrCreatePingCalendarId();
-  await Calendar.createEventAsync(calendarId, { title, startDate, endDate, allDay });
+  await Calendar.createEventAsync(calendarId, { title, startDate, endDate, allDay, notes: PING_NOTE_MARKER });
 }
 
-export async function updatePersonalCalendarEvent(
+// Also used to edit calendar events Ping didn't create (anything from the
+// user's own phone calendars, as long as its calendar allows writes - see
+// ExternalEvent.editable). isPersonal controls whether the marker gets
+// (re)written - it must never be stamped onto a real external/shared
+// calendar event just because the user edited it here, or the next fetch
+// would wrongly treat someone else's calendar entry as Ping's own to
+// freely delete.
+export async function updateCalendarEvent(
   eventId: string,
   title: string,
   startDate: Date,
   endDate: Date,
-  allDay: boolean
+  allDay: boolean,
+  isPersonal: boolean
 ): Promise<void> {
-  await Calendar.updateEventAsync(eventId, { title, startDate, endDate, allDay });
+  const updates: Partial<Calendar.Event> = { title, startDate, endDate, allDay };
+  if (isPersonal) updates.notes = PING_NOTE_MARKER;
+  await Calendar.updateEventAsync(eventId, updates);
 }
 
-export async function deletePersonalCalendarEvent(eventId: string): Promise<void> {
+export async function deleteCalendarEvent(eventId: string): Promise<void> {
   await Calendar.deleteEventAsync(eventId);
 }

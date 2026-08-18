@@ -8,8 +8,8 @@ import {
   getCalendarPermissionStatus,
   requestCalendarAccess,
   createPersonalCalendarEvent,
-  updatePersonalCalendarEvent,
-  deletePersonalCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
 } from '../lib/calendarConflicts';
 
 type Props = {
@@ -29,13 +29,15 @@ const toDateString = (date: Date) => {
 
 type PickerTarget = 'start' | 'end';
 
-// A lightweight, device-only counterpart to a Ping: title + start/end time,
-// no invitees, nothing sent. Saved straight to the phone's own calendar
-// (see createPersonalCalendarEvent) so it shows up in the Upcoming list
-// through the same phone-calendar import path as everything else there.
-// Doubles as the edit form when editingEvent is passed - only events Ping
-// itself created (its own dedicated calendar) are ever routed here for
-// editing, see ExternalEvent.isPersonal.
+// Creating: a lightweight, device-only counterpart to a Ping - title +
+// start/end time, no invitees, nothing sent. Saved straight to the phone's
+// own calendar (see createPersonalCalendarEvent) so it shows up in the
+// Upcoming list through the same phone-calendar import path as everything
+// else there.
+// Editing: also doubles as the edit form for any writable calendar event
+// tapped from Upcoming (see ExternalEvent.editable), not just ones Ping
+// created - editingEvent.isPersonal only changes the messaging/marker
+// handling, not whether editing is allowed.
 export default function AddPersonalItemModal({ visible, initialDate, editingEvent, onClose, onSaved }: Props) {
   const [title, setTitle] = useState('');
   const [startDate, setStartDate] = useState(new Date());
@@ -147,7 +149,7 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
       }
 
       if (editingEvent) {
-        await updatePersonalCalendarEvent(editingEvent.id, title.trim(), start, end, isAllDay);
+        await updateCalendarEvent(editingEvent.id, title.trim(), start, end, isAllDay, editingEvent.isPersonal);
       } else {
         await createPersonalCalendarEvent(title.trim(), start, end, isAllDay);
       }
@@ -162,25 +164,31 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
 
   const handleDelete = () => {
     if (!editingEvent) return;
-    Alert.alert('Delete this item?', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          setSubmitting(true);
-          try {
-            await deletePersonalCalendarEvent(editingEvent.id);
-            onSaved();
-          } catch (err) {
-            console.error('Error deleting personal calendar item:', err);
-            Alert.alert('Error', 'Could not delete that item.');
-          } finally {
-            setSubmitting(false);
-          }
+    Alert.alert(
+      'Delete this item?',
+      editingEvent.isPersonal
+        ? undefined
+        : "This will also remove it from wherever this calendar is synced (Google, iCloud, a shared family calendar, etc.) - not just from Ping.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setSubmitting(true);
+            try {
+              await deleteCalendarEvent(editingEvent.id);
+              onSaved();
+            } catch (err) {
+              console.error('Error deleting calendar item:', err);
+              Alert.alert('Error', 'Could not delete that item.');
+            } finally {
+              setSubmitting(false);
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   return (
@@ -189,9 +197,13 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
       <View style={styles.overlay}>
         <View style={styles.card}>
           <View style={styles.handle} />
-          <Text style={styles.header}>{isEditing ? 'Edit Personal Item' : 'Add Personal Item'}</Text>
+          <Text style={styles.header}>
+            {isEditing ? (editingEvent!.isPersonal ? 'Edit Personal Item' : 'Edit Calendar Event') : 'Add Personal Item'}
+          </Text>
           <Text style={styles.subheader}>
-            Only you can see this — it's saved to your phone's calendar, not sent to anyone.
+            {!isEditing || editingEvent!.isPersonal
+              ? "Only you can see this — it's saved to your phone's calendar, not sent to anyone."
+              : "This is from one of your other calendars — changes here update it everywhere it's synced, not just in Ping."}
           </Text>
 
           <Text style={styles.label}>Title</Text>
