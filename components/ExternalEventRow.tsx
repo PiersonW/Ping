@@ -6,6 +6,13 @@ import { ExternalEvent } from '../lib/calendarConflicts';
 type Props = {
   event: ExternalEvent;
   onEdit?: () => void;
+  // Present in the normal Upcoming view - tapping hides this event from
+  // Upcoming going forward (see lib/hiddenEvents). Not a calendar mutation,
+  // just a local display preference, so it works regardless of `editable`.
+  onHide?: () => void;
+  // Present instead of onEdit/onHide when this row is rendered inside the
+  // "Hidden" view - tapping the whole row restores it.
+  onUnhide?: () => void;
 };
 
 // Deliberately plain (no card, no border) so a phone-calendar event reads as
@@ -14,7 +21,7 @@ type Props = {
 // tap target so it can be edited or deleted from here - personal items
 // Ping wrote itself, or any other calendar event the user can already
 // edit in their own Calendar app.
-export default function ExternalEventRow({ event, onEdit }: Props) {
+export default function ExternalEventRow({ event, onEdit, onHide, onUnhide }: Props) {
   const dateLabel = event.startDate.toLocaleDateString(undefined, {
     weekday: 'short',
     month: 'short',
@@ -24,12 +31,26 @@ export default function ExternalEventRow({ event, onEdit }: Props) {
     ? 'All day'
     : event.startDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
+  if (onUnhide) {
+    return (
+      <TouchableOpacity style={styles.row} onPress={onUnhide} activeOpacity={0.6}>
+        <Text style={styles.text} numberOfLines={1}>
+          <Text style={styles.meta}>
+            {dateLabel} · {timeLabel} —{' '}
+          </Text>
+          {event.title}
+        </Text>
+        <Text style={styles.unhideText}>Unhide</Text>
+      </TouchableOpacity>
+    );
+  }
+
   const editable = event.editable && !!onEdit;
 
   return (
     <TouchableOpacity
       style={styles.row}
-      onPress={onEdit}
+      onPress={editable ? onEdit : undefined}
       disabled={!editable}
       activeOpacity={editable ? 0.6 : 1}
     >
@@ -40,6 +61,11 @@ export default function ExternalEventRow({ event, onEdit }: Props) {
         {event.title}
       </Text>
       {editable && <Text style={styles.editIcon}>✎</Text>}
+      {!!onHide && (
+        <TouchableOpacity onPress={onHide} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Text style={styles.hideIcon}>✕</Text>
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 }
@@ -49,4 +75,6 @@ const styles = StyleSheet.create({
   text: { flex: 1, fontSize: 14, color: colors.textSecondary },
   meta: { color: colors.textMuted },
   editIcon: { fontSize: 12, color: colors.textMuted, marginLeft: 8 },
+  hideIcon: { fontSize: 12, color: colors.textMuted, marginLeft: 10 },
+  unhideText: { color: colors.primary, fontSize: 13, fontWeight: '600', marginLeft: 10 },
 });

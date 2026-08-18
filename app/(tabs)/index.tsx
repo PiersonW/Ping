@@ -48,6 +48,7 @@ import {
   getUpcomingExternalEvents,
   requestCalendarAccess,
 } from "../../lib/calendarConflicts";
+import { getHiddenEventIds, hideEvent, unhideEvent } from "../../lib/hiddenEvents";
 import { useLatestGroupMessages } from "../../lib/useLatestGroupMessages";
 import { useLatestMessages } from "../../lib/useLatestMessages";
 import { supabase } from "../../supabase";
@@ -99,6 +100,8 @@ export default function HomeScreen() {
   });
   const [showDraftsOnly, setShowDraftsOnly] = useState(false);
   const [showDeclinedOnly, setShowDeclinedOnly] = useState(false);
+  const [showHiddenOnly, setShowHiddenOnly] = useState(false);
+  const [hiddenEventIds, setHiddenEventIds] = useState<Set<string>>(new Set());
   const [myRsvpByEvent, setMyRsvpByEvent] = useState<Record<string, string>>({});
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
   const [calendarPermission, setCalendarPermission] = useState<CalendarPermissionStatus | null>(null);
@@ -250,6 +253,22 @@ export default function HomeScreen() {
     if (granted) await fetchExternalEvents();
   };
 
+  useEffect(() => {
+    getHiddenEventIds().then(setHiddenEventIds);
+  }, []);
+
+  const handleHideEvent = async (eventId: string) => {
+    setHiddenEventIds(await hideEvent(eventId));
+  };
+
+  const handleUnhideEvent = async (eventId: string) => {
+    const next = await unhideEvent(eventId);
+    setHiddenEventIds(next);
+    // Nothing left to review - drop back to the normal Upcoming view
+    // instead of leaving the user stranded on an empty "Hidden" screen.
+    if (next.size === 0) setShowHiddenOnly(false);
+  };
+
   // Groups I'm in = groups I own, union groups I'm a resolved member of.
   const fetchGroups = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -392,6 +411,7 @@ export default function HomeScreen() {
     // this coexists with the customStyles-driven circle/bar logic above
     // without needing a custom day renderer.
     externalEvents.forEach((e) => {
+      if (hiddenEventIds.has(e.id)) return;
       const key = toDateKey(e.startDate);
       if (!marks[key]) {
         marks[key] = { marked: true, dotColor: colors.primary };
@@ -418,7 +438,7 @@ export default function HomeScreen() {
       },
     };
     return marks;
-  }, [declinedFilteredEvents, externalEvents, selectedDate]);
+  }, [declinedFilteredEvents, externalEvents, selectedDate, hiddenEventIds]);
 
   const visibleEvents = useMemo(() => {
     let result = declinedFilteredEvents;
@@ -464,6 +484,22 @@ export default function HomeScreen() {
     start < monthEnd && (end ?? start) >= monthStart;
 
   const upcomingListItems = useMemo<UpcomingListItem[]>(() => {
+    // Hidden is its own standalone view (phone-calendar events only, same
+    // as hiding itself) rather than another filter layered on top of the
+    // normal list - showing what's hidden alongside what isn't would just
+    // recreate the clutter hiding is meant to remove.
+    if (showHiddenOnly) {
+      return externalEvents
+        .filter((e) => hiddenEventIds.has(e.id))
+        .map((e) => ({
+          kind: "external" as const,
+          key: `ext-${e.id}`,
+          date: e.startDate,
+          event: e,
+        }))
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
+    }
+
     const monthScoped =
       !selectedDate && !showDraftsOnly && !showDeclinedOnly
         ? visibleEvents.filter((e) =>
@@ -483,9 +519,11 @@ export default function HomeScreen() {
 
     if (showDraftsOnly || showDeclinedOnly) return pingItems;
 
-    const dayFiltered = selectedDate
-      ? externalEvents.filter((e) => toDateKey(e.startDate) === selectedDate)
-      : externalEvents.filter((e) => inVisibleMonth(e.startDate, null));
+    const dayFiltered = (
+      selectedDate
+        ? externalEvents.filter((e) => toDateKey(e.startDate) === selectedDate)
+        : externalEvents.filter((e) => inVisibleMonth(e.startDate, null))
+    ).filter((e) => !hiddenEventIds.has(e.id));
 
     const externalItems: UpcomingListItem[] = dayFiltered.map((e) => ({
       kind: "external",
@@ -499,6 +537,8 @@ export default function HomeScreen() {
     );
   }, [
     visibleEvents,
+    showHiddenOnly,
+    hiddenEventIds,
     externalEvents,
     selectedDate,
     showDraftsOnly,
@@ -781,13 +821,15 @@ export default function HomeScreen() {
   const renderListHeader = (defaultTitle: string, showDraftsToggle = false) => (
     <View style={styles.listHeaderRow}>
       <Text style={styles.pageTitle}>
-        {showDraftsOnly
-          ? "Drafts"
-          : showDeclinedOnly
-            ? "Declined"
-            : selectedDate
-              ? "On this day"
-              : defaultTitle}
+        {showHiddenOnly
+          ? "Hidden"
+          : showDraftsOnly
+            ? "Drafts"
+            : showDeclinedOnly
+              ? "Declined"
+              : selectedDate
+                ? "On this day"
+                : defaultTitle}
       </Text>
       <View style={styles.listHeaderActions}>
         {selectedDate && (
@@ -800,7 +842,10 @@ export default function HomeScreen() {
             <TouchableOpacity
               onPress={() =>
                 setShowDraftsOnly((prev) => {
-                  if (!prev) setShowDeclinedOnly(false);
+                  if (!prev) {
+                    setShowDeclinedOnly(false);
+                    setShowHiddenOnly(false);
+                  }
                   return !prev;
                 })
               }
@@ -817,7 +862,10 @@ export default function HomeScreen() {
             <TouchableOpacity
               onPress={() =>
                 setShowDeclinedOnly((prev) => {
-                  if (!prev) setShowDraftsOnly(false);
+                  if (!prev) {
+                    setShowDraftsOnly(false);
+                    setShowHiddenOnly(false);
+                  }
                   return !prev;
                 })
               }
@@ -831,6 +879,28 @@ export default function HomeScreen() {
                 {showDeclinedOnly ? "Declined ✓" : "Declined"}
               </Text>
             </TouchableOpacity>
+            {hiddenEventIds.size > 0 && (
+              <TouchableOpacity
+                onPress={() =>
+                  setShowHiddenOnly((prev) => {
+                    if (!prev) {
+                      setShowDraftsOnly(false);
+                      setShowDeclinedOnly(false);
+                    }
+                    return !prev;
+                  })
+                }
+              >
+                <Text
+                  style={[
+                    styles.draftsText,
+                    showHiddenOnly && styles.draftsTextActive,
+                  ]}
+                >
+                  {showHiddenOnly ? "Hidden ✓" : "Hidden"}
+                </Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
       </View>
@@ -883,13 +953,15 @@ export default function HomeScreen() {
     </View>
   );
 
-  const emptyText = showDraftsOnly
-    ? "No drafts right now."
-    : showDeclinedOnly
-      ? "No declined events."
-      : selectedDate
-        ? "No events on this day."
-        : "No events yet — tap + to create one.";
+  const emptyText = showHiddenOnly
+    ? "Nothing hidden."
+    : showDraftsOnly
+      ? "No drafts right now."
+      : showDeclinedOnly
+        ? "No declined events."
+        : selectedDate
+          ? "No events on this day."
+          : "No events yet — tap + to create one.";
 
   const groupsEmptyText = "No groups yet — create one from the Groups screen.";
 
@@ -970,10 +1042,16 @@ export default function HomeScreen() {
                   onPress={openEvent}
                   rsvpStatus={myRsvpByEvent[item.event.id] as any}
                 />
+              ) : showHiddenOnly ? (
+                <ExternalEventRow
+                  event={item.event}
+                  onUnhide={() => handleUnhideEvent(item.event.id)}
+                />
               ) : (
                 <ExternalEventRow
                   event={item.event}
                   onEdit={item.event.editable ? () => setEditingPersonalEvent(item.event) : undefined}
+                  onHide={() => handleHideEvent(item.event.id)}
                 />
               )
             }
