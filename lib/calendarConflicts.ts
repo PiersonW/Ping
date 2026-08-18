@@ -95,21 +95,46 @@ async function getOrCreatePingCalendarId(): Promise<string> {
   const existing = calendars.find((c) => c.title === PING_CALENDAR_TITLE && c.allowsModifications);
   if (existing) return existing.id;
 
-  const source: Calendar.Source =
-    Platform.OS === 'ios'
-      ? (await Calendar.getDefaultCalendarAsync()).source
-      : { isLocalAccount: true, name: PING_CALENDAR_TITLE, type: Calendar.SourceType.LOCAL };
+  // The OS's notion of "default calendar" is very often a synced work/
+  // school/Google account, and iOS refuses to create a new calendar under
+  // most of those sources - a local, on-device source almost always
+  // accepts it, so try that first and only fall back to the default.
+  const sources: Calendar.Source[] = [];
+  const localSource = calendars.find((c) => c.source?.type === Calendar.SourceType.LOCAL)?.source;
+  if (localSource) sources.push(localSource);
+  if (Platform.OS === 'ios') {
+    try {
+      const defaultSource = (await Calendar.getDefaultCalendarAsync()).source;
+      if (!sources.some((s) => s.id === defaultSource.id)) sources.push(defaultSource);
+    } catch {}
+  } else if (sources.length === 0) {
+    sources.push({ isLocalAccount: true, name: PING_CALENDAR_TITLE, type: Calendar.SourceType.LOCAL });
+  }
 
-  return Calendar.createCalendarAsync({
-    title: PING_CALENDAR_TITLE,
-    color: '#5DADE2',
-    entityType: Calendar.EntityTypes.EVENT,
-    sourceId: source.id,
-    source,
-    name: 'pingPersonalItems',
-    ownerAccount: source.name ?? 'personal',
-    accessLevel: Calendar.CalendarAccessLevel.OWNER,
-  });
+  for (const source of sources) {
+    try {
+      return await Calendar.createCalendarAsync({
+        title: PING_CALENDAR_TITLE,
+        color: '#5DADE2',
+        entityType: Calendar.EntityTypes.EVENT,
+        sourceId: source.id,
+        source,
+        name: 'pingPersonalItems',
+        ownerAccount: source.name ?? 'personal',
+        accessLevel: Calendar.CalendarAccessLevel.OWNER,
+      });
+    } catch (err) {
+      console.error('Could not create Ping calendar under source', source, err);
+    }
+  }
+
+  // Every source refused a new calendar - fall back to writing straight
+  // into any calendar that already accepts new events, so the save itself
+  // still succeeds even though this particular item won't be tagged as
+  // Ping's own (isPersonal) until a Ping calendar can be created.
+  const fallback = calendars.find((c) => c.allowsModifications);
+  if (fallback) return fallback.id;
+  throw new Error('No writable calendar available on this device.');
 }
 
 // Only call once permission is confirmed granted — this never prompts.

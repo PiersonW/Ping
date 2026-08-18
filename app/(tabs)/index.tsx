@@ -7,9 +7,10 @@ import React, {
   useState,
 } from "react";
 import {
-  Alert,
   FlatList,
   LayoutChangeEvent,
+  Modal,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -79,6 +80,7 @@ export default function HomeScreen() {
   const [events, setEvents] = useState<PingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
+  const [fabMenuVisible, setFabMenuVisible] = useState(false);
   const [personalItemModalVisible, setPersonalItemModalVisible] = useState(false);
   const [editingPersonalEvent, setEditingPersonalEvent] = useState<ExternalEvent | null>(null);
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
@@ -242,14 +244,6 @@ export default function HomeScreen() {
       if (status === "granted") fetchExternalEvents();
     });
   }, [fetchExternalEvents]);
-
-  const handleFabPress = () => {
-    Alert.alert("New", undefined, [
-      { text: "Add Personal Item", onPress: () => setPersonalItemModalVisible(true) },
-      { text: "Create a Ping", onPress: () => setModalVisible(true) },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  };
 
   const handleEnableExternalCalendar = async () => {
     const granted = await requestCalendarAccess();
@@ -1070,11 +1064,42 @@ export default function HomeScreen() {
 
       <TouchableOpacity
         style={styles.fab}
-        onPress={handleFabPress}
+        onPress={() => setFabMenuVisible(true)}
         activeOpacity={0.85}
       >
         <Text style={styles.fabPlus}>+</Text>
       </TouchableOpacity>
+
+      <Modal
+        visible={fabMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFabMenuVisible(false)}
+      >
+        <Pressable style={styles.fabMenuBackdrop} onPress={() => setFabMenuVisible(false)}>
+          <View style={styles.fabMenu}>
+            <TouchableOpacity
+              style={styles.fabMenuItem}
+              onPress={() => {
+                setFabMenuVisible(false);
+                setPersonalItemModalVisible(true);
+              }}
+            >
+              <Text style={styles.fabMenuItemText}>Add Personal Item</Text>
+            </TouchableOpacity>
+            <View style={styles.fabMenuDivider} />
+            <TouchableOpacity
+              style={styles.fabMenuItem}
+              onPress={() => {
+                setFabMenuVisible(false);
+                setModalVisible(true);
+              }}
+            >
+              <Text style={styles.fabMenuItemText}>Create a Ping</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
 
       <CreateEventModal
         visible={modalVisible}
@@ -1231,4 +1256,24 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     marginTop: -2,
   },
+  fabMenuBackdrop: { flex: 1, backgroundColor: "rgba(43,43,43,0.4)" },
+  fabMenu: {
+    position: "absolute",
+    right: 24,
+    bottom: 116,
+    minWidth: 190,
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: colors.textPrimary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  fabMenuItem: { paddingHorizontal: 18, paddingVertical: 14 },
+  fabMenuItemText: { color: colors.textPrimary, fontSize: 16, fontWeight: "700" },
+  fabMenuDivider: { height: 1, backgroundColor: colors.divider, marginHorizontal: 10 },
 });

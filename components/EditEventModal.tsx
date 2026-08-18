@@ -746,13 +746,20 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
       setTimeout(() => reject(new Error('Timed out deleting event')), TIMEOUT_MS)
     );
 
+    // Invitees with no linked account never receive the push notification
+    // below - the host is the only way they'd ever hear this was canceled,
+    // so this is collected up front (before the invitees rows are gone)
+    // and surfaced after the delete succeeds, rather than letting them
+    // silently never find out.
+    let unreachableNames: string[] = [];
+
     try {
       await Promise.race([
         (async () => {
           if (shouldNotify) {
             const { data: allInvitees } = await supabase
               .from('invitees')
-              .select('user_id')
+              .select('user_id, invited_via, contacts(name, phone)')
               .eq('event_id', event.id);
             const recipientIds = (allInvitees || [])
               .map((i) => i.user_id)
@@ -763,6 +770,9 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
                 type: 'event_canceled',
               });
             }
+            unreachableNames = (allInvitees || [])
+              .filter((i: any) => !i.user_id && i.invited_via === 'sms' && i.contacts?.phone)
+              .map((i: any) => i.contacts?.name || 'Guest');
           }
 
           // Cascade delete configuration on the DB side is unknown, so
@@ -779,11 +789,19 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
 
           const { error } = await supabase.from('events').delete().eq('id', event.id);
           if (error) throw error;
-
-          onDeleted();
         })(),
         timeout,
       ]);
+
+      if (unreachableNames.length > 0) {
+        Alert.alert(
+          "Some guests won't be notified",
+          `${unreachableNames.join(', ')} won't get an automatic notice since they don't have Ping — you'll need to text them yourself to let them know it was canceled.`,
+          [{ text: 'OK', onPress: onDeleted }]
+        );
+      } else {
+        onDeleted();
+      }
     } catch (err) {
       console.error('Error deleting event:', err);
       Alert.alert('Error', 'Could not delete this event. Check your connection and try again.');
@@ -825,23 +843,20 @@ export default function EditEventModal({ visible, event, onClose, onSaved, onDel
           >
             <Text style={styles.header}>{isDraft ? 'Finish Draft' : 'Edit Event'}</Text>
 
-            <TouchableOpacity onPress={handlePhotoTap} activeOpacity={0.85}>
-              <LinearGradient colors={cardFrameGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.imageFrame}>
-                {imageUri || existingImageUrl ? (
-                  <>
-                    <Image source={{ uri: imageUri || existingImageUrl! }} style={styles.image} resizeMode="cover" />
-                    <View style={styles.editPhotoBadge}>
-                      <Text style={styles.editPhotoBadgeIcon}>✏️</Text>
-                    </View>
-                  </>
-                ) : (
-                  <View style={[styles.image, styles.imagePlaceholder]}>
-                    <Text style={styles.imagePlaceholderIcon}>📷</Text>
-                    <Text style={styles.imagePlaceholderText}>Add Photo</Text>
+            {imageUri || existingImageUrl ? (
+              <TouchableOpacity onPress={handlePhotoTap} activeOpacity={0.85}>
+                <LinearGradient colors={cardFrameGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.imageFrame}>
+                  <Image source={{ uri: imageUri || existingImageUrl! }} style={styles.image} resizeMode="cover" />
+                  <View style={styles.editPhotoBadge}>
+                    <Text style={styles.editPhotoBadgeIcon}>✏️</Text>
                   </View>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.addImageRow} onPress={handlePhotoTap}>
+                <Text style={styles.addImageText}>+ Add an image</Text>
+              </TouchableOpacity>
+            )}
 
             <Text style={styles.label}>Event Title</Text>
             <TextInput
@@ -1246,9 +1261,8 @@ const styles = StyleSheet.create({
   header: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: 16 },
   imageFrame: { borderRadius: 18, padding: 3, marginBottom: 16 },
   image: { width: '100%', aspectRatio: EVENT_IMAGE_ASPECT_RATIO, borderRadius: 15 },
-  imagePlaceholder: { backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
-  imagePlaceholderIcon: { fontSize: 32, marginBottom: 6 },
-  imagePlaceholderText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  addImageRow: { paddingVertical: 10, marginBottom: 4 },
+  addImageText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
   editPhotoBadge: {
     position: 'absolute',
     bottom: 12,

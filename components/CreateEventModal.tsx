@@ -610,23 +610,20 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
           >
             <Text style={styles.header}>Create a Ping</Text>
 
-            <TouchableOpacity onPress={handlePhotoTap} activeOpacity={0.85}>
-              <LinearGradient colors={cardFrameGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.imageFrame}>
-                {imageUri ? (
-                  <>
-                    <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
-                    <View style={styles.editPhotoBadge}>
-                      <Text style={styles.editPhotoBadgeIcon}>✏️</Text>
-                    </View>
-                  </>
-                ) : (
-                  <View style={[styles.image, styles.imagePlaceholder]}>
-                    <Text style={styles.imagePlaceholderIcon}>📷</Text>
-                    <Text style={styles.imagePlaceholderText}>Add Photo</Text>
+            {imageUri ? (
+              <TouchableOpacity onPress={handlePhotoTap} activeOpacity={0.85}>
+                <LinearGradient colors={cardFrameGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.imageFrame}>
+                  <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
+                  <View style={styles.editPhotoBadge}>
+                    <Text style={styles.editPhotoBadgeIcon}>✏️</Text>
                   </View>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.addImageRow} onPress={handlePhotoTap}>
+                <Text style={styles.addImageText}>+ Add an image</Text>
+              </TouchableOpacity>
+            )}
 
             <Text style={styles.label}>Event Title</Text>
             <TextInput
@@ -1005,9 +1002,8 @@ const styles = StyleSheet.create({
   header: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: 16 },
   imageFrame: { borderRadius: 18, padding: 3, marginBottom: 16 },
   image: { width: '100%', aspectRatio: EVENT_IMAGE_ASPECT_RATIO, borderRadius: 15 },
-  imagePlaceholder: { backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
-  imagePlaceholderIcon: { fontSize: 32, marginBottom: 6 },
-  imagePlaceholderText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  addImageRow: { paddingVertical: 10, marginBottom: 4 },
+  addImageText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
   editPhotoBadge: {
     position: 'absolute',
     bottom: 12,

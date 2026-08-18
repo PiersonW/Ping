@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert } from 'react-native';
+import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert, KeyboardAvoidingView, Keyboard } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Calendar } from 'react-native-calendars';
 import { colors, calendarTheme } from '../lib/theme';
@@ -185,6 +185,7 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.overlay}>
         <View style={styles.card}>
           <View style={styles.handle} />
@@ -201,6 +202,8 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
             value={title}
             onChangeText={setTitle}
             autoFocus={!isEditing}
+            returnKeyType="done"
+            onSubmitEditing={Keyboard.dismiss}
           />
 
           <Text style={styles.label}>Starts</Text>
@@ -288,6 +291,7 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
           )}
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
