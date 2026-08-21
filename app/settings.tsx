@@ -84,7 +84,11 @@ export default function SettingsScreen() {
     if (profileError) {
       setSaving(false);
       console.error('Error saving profile:', profileError);
-      Alert.alert('Error', 'Could not save your profile.');
+      if (profileError.code === '23505') {
+        Alert.alert('Phone number in use', 'That phone number is already linked to another account.');
+      } else {
+        Alert.alert('Error', 'Could not save your profile.');
+      }
       return;
     }
 
