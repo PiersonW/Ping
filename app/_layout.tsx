@@ -4,9 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack, useRouter } from 'expo-router';
 import { AuthProvider, useAuth } from '../lib/AuthContext';
 import { NotificationsProvider, useNotificationsContext } from '../lib/NotificationsContext';
-import { useProfilePhone } from '../lib/useProfilePhone';
 import LoginScreen from './(auth)/login';
-import PhoneGateScreen from '../components/PhoneGateScreen';
 import InvitePopup from '../components/InvitePopup';
 import { colors } from '../lib/theme';
 
@@ -33,9 +31,8 @@ function InvitePopupHost() {
 
 function RootNavigation() {
   const { session, loading } = useAuth();
-  const { hasPhone, loading: phoneLoading, refresh: refreshPhone } = useProfilePhone(session?.user?.id);
 
-  if (loading || (session && phoneLoading)) {
+  if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={colors.primary} />
@@ -47,10 +44,10 @@ function RootNavigation() {
     return <LoginScreen />;
   }
 
-  if (!hasPhone) {
-    return <PhoneGateScreen onDone={refreshPhone} />;
-  }
-
+  // Phone number and name are collected on-demand from a dismissible
+  // Home-screen banner instead of gating entry here - Apple rejected an
+  // earlier build (guideline 5.1.1(v)) for requiring phone number just to
+  // use the app at all. See lib/useProfilePhone.ts / app/(tabs)/index.tsx.
   return (
     <NotificationsProvider>
       <Stack screenOptions={{ headerShown: false }} />

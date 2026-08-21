@@ -49,6 +49,7 @@ import {
   requestCalendarAccess,
 } from "../../lib/calendarConflicts";
 import { getHiddenEventIds, hideEvent, unhideEvent } from "../../lib/hiddenEvents";
+import { dismissProfilePrompt, useProfilePhone } from "../../lib/useProfilePhone";
 import { useLatestGroupMessages } from "../../lib/useLatestGroupMessages";
 import { useLatestMessages } from "../../lib/useLatestMessages";
 import { supabase } from "../../supabase";
@@ -77,6 +78,8 @@ const CROSSFADE_BAND = 16;
 export default function HomeScreen() {
   const router = useRouter();
   const { session } = useAuth();
+  const { shouldPrompt: shouldPromptPhone } = useProfilePhone(session?.user?.id);
+  const [phoneBannerDismissed, setPhoneBannerDismissed] = useState(false);
   const [events, setEvents] = useState<PingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -251,6 +254,11 @@ export default function HomeScreen() {
     const granted = await requestCalendarAccess();
     setCalendarPermission(granted ? "granted" : "denied");
     if (granted) await fetchExternalEvents();
+  };
+
+  const handleDismissPhoneBanner = async () => {
+    setPhoneBannerDismissed(true);
+    if (session?.user?.id) await dismissProfilePrompt(session.user.id);
   };
 
   useEffect(() => {
@@ -1022,6 +1030,28 @@ export default function HomeScreen() {
                 </Text>
               </TouchableOpacity>
             )}
+          {shouldPromptPhone &&
+            !phoneBannerDismissed &&
+            !showDraftsOnly &&
+            !showDeclinedOnly &&
+            !showHiddenOnly && (
+              <View style={styles.calendarPromptRow}>
+                <TouchableOpacity
+                  style={{ flex: 1 }}
+                  onPress={() => router.push("/settings")}
+                >
+                  <Text style={styles.calendarPromptText}>
+                    📱 Add your phone number so people can find and invite you
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleDismissPhoneBanner}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.phonePromptDismiss}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           <FlatList
             style={{ flex: 1 }}
             data={upcomingListItems}
@@ -1300,8 +1330,14 @@ const styles = StyleSheet.create({
   backToCalendarButton: { flexShrink: 1, marginRight: 8 },
   pageTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: "700" },
   clearFilterText: { color: colors.primary, fontSize: 14, fontWeight: "600" },
-  calendarPromptRow: { marginHorizontal: 20, marginTop: 8 },
+  calendarPromptRow: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
   calendarPromptText: { color: colors.primaryDark, fontSize: 13 },
+  phonePromptDismiss: { color: colors.textMuted, fontSize: 13, paddingLeft: 12 },
   emptyText: {
     color: colors.textMuted,
     textAlign: "center",

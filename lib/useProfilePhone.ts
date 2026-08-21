@@ -1,19 +1,29 @@
 import { useCallback, useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../supabase';
 
-// Contact-linking (see lib/phone.ts) depends entirely on profiles.phone
-// being set, but it was previously only collected via an optional Settings
-// field — most people never got there, so invites silently never reached
-// them. This gates app entry until it's set.
+const dismissedKey = (userId: string) => `ping.profilePromptDismissed.${userId}`;
+
+// Contact-linking (see lib/phone.ts) depends on profiles.phone - worth
+// asking for, but never blocking. Apple rejected an earlier build
+// (guideline 5.1.1(v)) for gating app entry on phone number, so this only
+// drives a dismissible Home-screen banner (see app/(tabs)/index.tsx),
+// shown at most once per account per device regardless of whether the
+// user adds it or dismisses the banner.
 export function useProfilePhone(userId?: string | null) {
   const [phone, setPhone] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     if (!userId) return;
-    const { data, error } = await supabase.from('profiles').select('phone').eq('id', userId).maybeSingle();
+    const [{ data, error }, dismissedValue] = await Promise.all([
+      supabase.from('profiles').select('phone').eq('id', userId).maybeSingle(),
+      AsyncStorage.getItem(dismissedKey(userId)),
+    ]);
     if (error) console.error('Error fetching profile phone:', error);
     setPhone(data?.phone || null);
+    setDismissed(dismissedValue === 'true');
   }, [userId]);
 
   useEffect(() => {
@@ -21,5 +31,9 @@ export function useProfilePhone(userId?: string | null) {
     refresh().finally(() => setLoading(false));
   }, [refresh]);
 
-  return { hasPhone: !!phone, loading, refresh };
+  return { hasPhone: !!phone, shouldPrompt: !phone && !dismissed, loading, refresh };
+}
+
+export async function dismissProfilePrompt(userId: string): Promise<void> {
+  await AsyncStorage.setItem(dismissedKey(userId), 'true');
 }
