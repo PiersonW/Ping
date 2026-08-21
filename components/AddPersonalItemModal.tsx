@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert, KeyboardAvoidingView, Keyboard } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated, PanResponder } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Calendar } from 'react-native-calendars';
 import { colors, calendarTheme } from '../lib/theme';
@@ -51,8 +51,35 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
 
   const isEditing = !!editingEvent;
 
+  const dragY = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dy > 0) dragY.setValue(gesture.dy);
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy > 100 || gesture.vy > 0.8) {
+          Animated.timing(dragY, {
+            toValue: 800,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            dragY.setValue(0);
+            onClose();
+          });
+        } else {
+          Animated.spring(dragY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+        }
+      },
+    })
+  ).current;
+
   useEffect(() => {
     if (!visible) return;
+    dragY.setValue(0);
     setShowPicker(false);
 
     if (editingEvent) {
@@ -196,8 +223,14 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.overlay}>
-        <View style={styles.card}>
-          <View style={styles.handle} />
+        <Animated.View style={[styles.card, { transform: [{ translateY: dragY }] }]}>
+          <View
+            style={styles.dragHandleArea}
+            hitSlop={{ top: 10, bottom: 16, left: 30, right: 30 }}
+            {...panResponder.panHandlers}
+          >
+            <View style={styles.handle} />
+          </View>
           <Text style={styles.header}>
             {isEditing ? (editingEvent!.isPersonal ? 'Edit Personal Item' : 'Edit Calendar Event') : 'Add Personal Item'}
           </Text>
@@ -311,7 +344,7 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
               </TouchableOpacity>
             </>
           )}
-        </View>
+        </Animated.View>
       </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -321,7 +354,8 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(43,43,43,0.4)' },
   card: { backgroundColor: colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 },
+  dragHandleArea: { paddingVertical: 8 },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 4 },
   header: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
   subheader: { color: colors.textSecondary, fontSize: 13, marginTop: 4, marginBottom: 16, lineHeight: 18 },
   label: { fontWeight: '600', marginTop: 12, marginBottom: 6, color: colors.textPrimary },
