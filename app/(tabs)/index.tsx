@@ -86,6 +86,12 @@ export default function HomeScreen() {
   const [fabMenuVisible, setFabMenuVisible] = useState(false);
   const [personalItemModalVisible, setPersonalItemModalVisible] = useState(false);
   const [editingPersonalEvent, setEditingPersonalEvent] = useState<ExternalEvent | null>(null);
+  const [convertPrefill, setConvertPrefill] = useState<{
+    title: string;
+    startDate: Date;
+    endDate: Date;
+    isAllDay: boolean;
+  } | null>(null);
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
@@ -331,8 +337,21 @@ export default function HomeScreen() {
     }
   }, [refreshLatestGroupMessages, selectedGroupId]);
 
+  const handleConvertToPing = (event: ExternalEvent) => {
+    setPersonalItemModalVisible(false);
+    setEditingPersonalEvent(null);
+    setConvertPrefill({
+      title: event.title,
+      startDate: new Date(event.startDate),
+      endDate: new Date(event.endDate),
+      isAllDay: event.allDay,
+    });
+    setModalVisible(true);
+  };
+
   const handleCreated = async (status: "sent" | "draft") => {
     setModalVisible(false);
+    setConvertPrefill(null);
     await fetchEvents();
     setEvents((current) => {
       const newest = [...current].sort(
@@ -1230,9 +1249,13 @@ export default function HomeScreen() {
 
       <CreateEventModal
         visible={modalVisible}
-        onClose={() => setModalVisible(false)}
+        onClose={() => {
+          setModalVisible(false);
+          setConvertPrefill(null);
+        }}
         onCreated={handleCreated}
         initialDate={selectedDate}
+        prefill={convertPrefill}
       />
 
       <AddPersonalItemModal
@@ -1249,6 +1272,7 @@ export default function HomeScreen() {
           setCalendarPermission("granted");
           await fetchExternalEvents();
         }}
+        onConvertToPing={handleConvertToPing}
       />
 
       <EventDetailModal

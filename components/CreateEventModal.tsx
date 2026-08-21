@@ -49,9 +49,13 @@ type Props = {
   // pre-fills the date field so tapping + after picking a day doesn't
   // default back to today.
   initialDate?: string | null;
+  // Carries a personal/synced calendar item's title and time over when the
+  // user converts it into a real Ping (see AddPersonalItemModal's "Convert
+  // to Ping" button) - takes priority over initialDate when both are set.
+  prefill?: { title: string; startDate: Date; endDate: Date; isAllDay: boolean } | null;
 };
 
-export default function CreateEventModal({ visible, onClose, onCreated, initialDate }: Props) {
+export default function CreateEventModal({ visible, onClose, onCreated, initialDate, prefill }: Props) {
   const { session } = useAuth();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -346,14 +350,22 @@ export default function CreateEventModal({ visible, onClose, onCreated, initialD
   };
 
   const resetForm = () => {
-    setTitle('');
     setDescription('');
     setLocation('');
-    const initial = buildInitialEventDate();
-    setEventDate(initial);
-    setEndDate(new Date(initial.getTime() + 60 * 60000));
-    setIsMultiDay(false);
-    setIsAllDay(false);
+    if (prefill) {
+      setTitle(prefill.title);
+      setEventDate(prefill.startDate);
+      setEndDate(prefill.endDate);
+      setIsMultiDay(prefill.startDate.toDateString() !== prefill.endDate.toDateString());
+      setIsAllDay(prefill.isAllDay);
+    } else {
+      setTitle('');
+      const initial = buildInitialEventDate();
+      setEventDate(initial);
+      setEndDate(new Date(initial.getTime() + 60 * 60000));
+      setIsMultiDay(false);
+      setIsAllDay(false);
+    }
     setSelectedContactIds([]);
     setSelectedGroupIds([]);
     setExcludedGroupMemberIds([]);

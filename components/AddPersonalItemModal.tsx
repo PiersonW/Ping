@@ -18,6 +18,7 @@ type Props = {
   editingEvent?: ExternalEvent | null;
   onClose: () => void;
   onSaved: () => void;
+  onConvertToPing?: (event: ExternalEvent) => void;
 };
 
 const toDateString = (date: Date) => {
@@ -38,7 +39,7 @@ type PickerTarget = 'start' | 'end';
 // tapped from Upcoming (see ExternalEvent.editable), not just ones Ping
 // created - editingEvent.isPersonal only changes the messaging/marker
 // handling, not whether editing is allowed.
-export default function AddPersonalItemModal({ visible, initialDate, editingEvent, onClose, onSaved }: Props) {
+export default function AddPersonalItemModal({ visible, initialDate, editingEvent, onClose, onSaved, onConvertToPing }: Props) {
   const [title, setTitle] = useState('');
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date(Date.now() + 60 * 60000));
@@ -291,6 +292,15 @@ export default function AddPersonalItemModal({ visible, initialDate, editingEven
                   {submitting ? 'Saving…' : isEditing ? 'Save Changes' : 'Add to My Calendar'}
                 </Text>
               </TouchableOpacity>
+              {isEditing && onConvertToPing && (
+                <TouchableOpacity
+                  style={styles.convertButton}
+                  onPress={() => onConvertToPing(editingEvent!)}
+                  disabled={submitting}
+                >
+                  <Text style={styles.convertButtonText}>Convert to Ping & Invite People</Text>
+                </TouchableOpacity>
+              )}
               {isEditing && (
                 <TouchableOpacity style={styles.deleteButton} onPress={handleDelete} disabled={submitting}>
                   <Text style={styles.deleteText}>Delete</Text>
@@ -336,6 +346,8 @@ const styles = StyleSheet.create({
   doneText: { color: colors.primary, textAlign: 'right', marginTop: 8, fontSize: 15, fontWeight: '600' },
   primaryButton: { backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 20 },
   primaryButtonText: { color: colors.textOnPrimary, fontSize: 16, fontWeight: '700' },
+  convertButton: { borderRadius: 14, borderWidth: 1.5, borderColor: colors.primary, paddingVertical: 13, alignItems: 'center', marginTop: 10 },
+  convertButtonText: { color: colors.primary, fontSize: 15, fontWeight: '700' },
   deleteButton: { paddingVertical: 14, alignItems: 'center' },
   deleteText: { color: colors.danger, fontSize: 14, fontWeight: '600' },
   cancelButton: { paddingVertical: 6, alignItems: 'center' },
