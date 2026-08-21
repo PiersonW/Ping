@@ -101,6 +101,9 @@ export default function HomeScreen() {
     d.setHours(0, 0, 0, 0);
     return d;
   });
+  const changeMonth = (delta: number) => {
+    setVisibleMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+  };
   const [showDraftsOnly, setShowDraftsOnly] = useState(false);
   const [showDeclinedOnly, setShowDeclinedOnly] = useState(false);
   const [showHiddenOnly, setShowHiddenOnly] = useState(false);
@@ -708,6 +711,23 @@ export default function HomeScreen() {
       dragY.value = withSpring(target, SPRING_CONFIG);
     });
 
+  // Lets the Upcoming list change months the same way swiping the calendar
+  // grid itself does - needed because pulling the sheet up covers that grid
+  // (see topLimit/MIN_TOP_INSET above), so it's otherwise unreachable while
+  // the list is showing. activeOffsetX/failOffsetY keep this from
+  // hijacking the FlatList's own vertical scroll - it only takes over once
+  // the drag is clearly more horizontal than vertical.
+  const monthSwipe = Gesture.Pan()
+    .activeOffsetX([-20, 20])
+    .failOffsetY([-10, 10])
+    .onEnd((e) => {
+      if (e.translationX <= -40) {
+        runOnJS(changeMonth)(1);
+      } else if (e.translationX >= 40) {
+        runOnJS(changeMonth)(-1);
+      }
+    });
+
   // Lets the "Messages" menu link snap the handle straight to the bottom
   // resting point, revealing the Message Board the same way a manual drag
   // would — teaches people where the feature lives.
@@ -995,6 +1015,7 @@ export default function HomeScreen() {
       <View style={styles.contentArea} onLayout={handleContentLayout}>
         <View style={styles.calendarWrapper} onLayout={handleCalendarLayout}>
           <Calendar
+            current={toDateKey(visibleMonth)}
             onDayPress={onDayPress}
             onMonthChange={(month) =>
               setVisibleMonth(new Date(month.year, month.month - 1, 1))
@@ -1052,6 +1073,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
             )}
+          <GestureDetector gesture={monthSwipe}>
           <FlatList
             style={{ flex: 1 }}
             data={upcomingListItems}
@@ -1092,6 +1114,7 @@ export default function HomeScreen() {
             }
             contentContainerStyle={{ paddingVertical: 12, paddingBottom: 120 }}
           />
+          </GestureDetector>
         </Animated.View>
 
         <Animated.View
