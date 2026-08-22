@@ -7,6 +7,8 @@ import React, {
   useState,
 } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
   LayoutChangeEvent,
   Pressable,
@@ -37,6 +39,7 @@ import ExternalEventRow from "../../components/ExternalEventRow";
 import GroupChatModal from "../../components/GroupChatModal";
 import PingLogoMenu from "../../components/PingLogoMenu";
 import ProfileMenu from "../../components/ProfileMenu";
+import ScheduleReviewModal from "../../components/ScheduleReviewModal";
 import { useAuth } from "../../lib/AuthContext";
 import { useNotificationsContext } from "../../lib/NotificationsContext";
 import { calendarTheme, colors } from "../../lib/theme";
@@ -49,6 +52,8 @@ import {
   requestCalendarAccess,
 } from "../../lib/calendarConflicts";
 import { getHiddenEventIds, hideEvent, unhideEvent } from "../../lib/hiddenEvents";
+import { pickEventImage } from "../../lib/imagePicker";
+import { extractScheduleEvents, ExtractedEvent } from "../../lib/scheduleImport";
 import { dismissProfilePrompt, useProfilePhone } from "../../lib/useProfilePhone";
 import { useLatestGroupMessages } from "../../lib/useLatestGroupMessages";
 import { useLatestMessages } from "../../lib/useLatestMessages";
@@ -92,6 +97,8 @@ export default function HomeScreen() {
     endDate: Date;
     isAllDay: boolean;
   } | null>(null);
+  const [scanningSchedule, setScanningSchedule] = useState(false);
+  const [scheduleReviewEvents, setScheduleReviewEvents] = useState<ExtractedEvent[] | null>(null);
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
@@ -125,6 +132,7 @@ export default function HomeScreen() {
   const [showDraftsOnly, setShowDraftsOnly] = useState(false);
   const [showDeclinedOnly, setShowDeclinedOnly] = useState(false);
   const [showHiddenOnly, setShowHiddenOnly] = useState(false);
+  const [showPingsOnly, setShowPingsOnly] = useState(false);
   const [hiddenEventIds, setHiddenEventIds] = useState<Set<string>>(new Set());
   const [myRsvpByEvent, setMyRsvpByEvent] = useState<Record<string, string>>({});
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
@@ -361,6 +369,29 @@ export default function HomeScreen() {
     setModalVisible(true);
   };
 
+  const handleScanSchedule = async () => {
+    const uri = await pickEventImage();
+    if (!uri) return;
+
+    setScanningSchedule(true);
+    try {
+      const { events, warning } = await extractScheduleEvents(uri);
+      setScanningSchedule(false);
+      if (warning === "no_events_found" || events.length === 0) {
+        Alert.alert(
+          "No events found",
+          "Couldn't find any events in that photo. Try a clearer or closer photo.",
+        );
+        return;
+      }
+      setScheduleReviewEvents(events);
+    } catch (err) {
+      setScanningSchedule(false);
+      console.error("Error scanning schedule:", err);
+      Alert.alert("Error", "Something went wrong reading that photo. Try again.");
+    }
+  };
+
   const handleCreated = async (status: "sent" | "draft") => {
     setModalVisible(false);
     setConvertPrefill(null);
@@ -559,7 +590,7 @@ export default function HomeScreen() {
       event: e,
     }));
 
-    if (showDraftsOnly || showDeclinedOnly) return pingItems;
+    if (showDraftsOnly || showDeclinedOnly || showPingsOnly) return pingItems;
 
     const dayFiltered = (
       selectedDate
@@ -585,6 +616,7 @@ export default function HomeScreen() {
     selectedDate,
     showDraftsOnly,
     showDeclinedOnly,
+    showPingsOnly,
     monthStart,
     monthEnd,
   ]);
@@ -877,7 +909,7 @@ export default function HomeScreen() {
     return { transform: [{ translateY: calBottom + dragY.value }] };
   });
 
-  const renderListHeader = (defaultTitle: string, showDraftsToggle = false) => (
+  const renderListHeader = (defaultTitle: string) => (
     <View style={styles.listHeaderRow}>
       <Text style={styles.pageTitle}>
         {showHiddenOnly
@@ -896,71 +928,37 @@ export default function HomeScreen() {
             <Text style={styles.clearFilterText}>Show all</Text>
           </TouchableOpacity>
         )}
-        {showDraftsToggle && (
-          <>
-            <TouchableOpacity
-              onPress={() =>
-                setShowDraftsOnly((prev) => {
-                  if (!prev) {
-                    setShowDeclinedOnly(false);
-                    setShowHiddenOnly(false);
-                  }
-                  return !prev;
-                })
-              }
-            >
-              <Text
-                style={[
-                  styles.draftsText,
-                  showDraftsOnly && styles.draftsTextActive,
-                ]}
-              >
-                {showDraftsOnly ? "Drafts ✓" : "Drafts"}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() =>
-                setShowDeclinedOnly((prev) => {
-                  if (!prev) {
-                    setShowDraftsOnly(false);
-                    setShowHiddenOnly(false);
-                  }
-                  return !prev;
-                })
-              }
-            >
-              <Text
-                style={[
-                  styles.draftsText,
-                  showDeclinedOnly && styles.draftsTextActive,
-                ]}
-              >
-                {showDeclinedOnly ? "Declined ✓" : "Declined"}
-              </Text>
-            </TouchableOpacity>
-            {hiddenEventIds.size > 0 && (
-              <TouchableOpacity
-                onPress={() =>
-                  setShowHiddenOnly((prev) => {
-                    if (!prev) {
-                      setShowDraftsOnly(false);
-                      setShowDeclinedOnly(false);
-                    }
-                    return !prev;
-                  })
+        <TouchableOpacity onPress={() => setShowPingsOnly((prev) => !prev)}>
+          <Text
+            style={[
+              styles.draftsText,
+              showPingsOnly && styles.draftsTextActive,
+            ]}
+          >
+            {showPingsOnly ? "Pings Only ✓" : "Pings Only"}
+          </Text>
+        </TouchableOpacity>
+        {hiddenEventIds.size > 0 && (
+          <TouchableOpacity
+            onPress={() =>
+              setShowHiddenOnly((prev) => {
+                if (!prev) {
+                  setShowDraftsOnly(false);
+                  setShowDeclinedOnly(false);
                 }
-              >
-                <Text
-                  style={[
-                    styles.draftsText,
-                    showHiddenOnly && styles.draftsTextActive,
-                  ]}
-                >
-                  {showHiddenOnly ? "Hidden ✓" : "Hidden"}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </>
+                return !prev;
+              })
+            }
+          >
+            <Text
+              style={[
+                styles.draftsText,
+                showHiddenOnly && styles.draftsTextActive,
+              ]}
+            >
+              {showHiddenOnly ? "Hidden ✓" : "Hidden"}
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
     </View>
@@ -1039,7 +1037,30 @@ export default function HomeScreen() {
           <TouchableOpacity onPress={() => router.push("/groups")}>
             <Text style={styles.groupsText}>Groups</Text>
           </TouchableOpacity>
-          <ProfileMenu />
+          <ProfileMenu
+            draftsActive={showDraftsOnly}
+            declinedActive={showDeclinedOnly}
+            onToggleDrafts={() => {
+              setShowDraftsOnly((prev) => {
+                if (!prev) {
+                  setShowDeclinedOnly(false);
+                  setShowHiddenOnly(false);
+                }
+                return !prev;
+              });
+              closeMessages();
+            }}
+            onToggleDeclined={() => {
+              setShowDeclinedOnly((prev) => {
+                if (!prev) {
+                  setShowDraftsOnly(false);
+                  setShowHiddenOnly(false);
+                }
+                return !prev;
+              });
+              closeMessages();
+            }}
+          />
         </View>
       </View>
 
@@ -1070,7 +1091,7 @@ export default function HomeScreen() {
           pointerEvents={isCompactMode ? "none" : "auto"}
         >
           <View style={styles.handleSpacer} />
-          {renderListHeader("Upcoming", true)}
+          {renderListHeader("Upcoming")}
           {calendarPermission === "undetermined" &&
             !showDraftsOnly &&
             !showDeclinedOnly && (
@@ -1252,6 +1273,14 @@ export default function HomeScreen() {
           <TouchableOpacity
             onPress={() => {
               setFabMenuVisible(false);
+              handleScanSchedule();
+            }}
+          >
+            <Text style={styles.fabMenuItemText}>Scan a Schedule</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setFabMenuVisible(false);
               setModalVisible(true);
             }}
           >
@@ -1286,6 +1315,24 @@ export default function HomeScreen() {
           await fetchExternalEvents();
         }}
         onConvertToPing={handleConvertToPing}
+      />
+
+      {scanningSchedule && (
+        <View style={styles.scanningOverlay} pointerEvents="auto">
+          <ActivityIndicator color={colors.textOnPrimary} size="large" />
+          <Text style={styles.scanningText}>Reading your schedule…</Text>
+        </View>
+      )}
+
+      <ScheduleReviewModal
+        visible={!!scheduleReviewEvents}
+        extractedEvents={scheduleReviewEvents || []}
+        onClose={() => setScheduleReviewEvents(null)}
+        onSaved={async () => {
+          setScheduleReviewEvents(null);
+          setCalendarPermission("granted");
+          await fetchExternalEvents();
+        }}
       />
 
       <EventDetailModal
@@ -1440,6 +1487,22 @@ const styles = StyleSheet.create({
     bottom: 116,
     alignItems: "flex-end",
     gap: 20,
+  },
+  scanningOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(43,43,43,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  scanningText: {
+    color: colors.textOnPrimary,
+    fontSize: 16,
+    fontWeight: "600",
   },
   fabMenuItemText: {
     color: colors.textOnPrimary,

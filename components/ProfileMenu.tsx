@@ -7,8 +7,15 @@ import { colors } from '../lib/theme';
 
 const MENU_WIDTH = 200;
 
+type Props = {
+  draftsActive: boolean;
+  declinedActive: boolean;
+  onToggleDrafts: () => void;
+  onToggleDeclined: () => void;
+};
+
 // Notifications will get its own row in this menu once that feature exists.
-export default function ProfileMenu() {
+export default function ProfileMenu({ draftsActive, declinedActive, onToggleDrafts, onToggleDeclined }: Props) {
   const router = useRouter();
   const { session, signOut } = useAuth();
   const [open, setOpen] = useState(false);
@@ -61,6 +68,16 @@ export default function ProfileMenu() {
     router.push('/settings');
   };
 
+  const handleDrafts = () => {
+    setOpen(false);
+    onToggleDrafts();
+  };
+
+  const handleDeclined = () => {
+    setOpen(false);
+    onToggleDeclined();
+  };
+
   return (
     <>
       <TouchableOpacity
@@ -81,6 +98,17 @@ export default function ProfileMenu() {
           <View style={[styles.menu, { top: anchor.top, left: anchor.left, width: MENU_WIDTH }]}>
             <TouchableOpacity style={styles.menuItem} onPress={openSettings}>
               <Text style={styles.menuItemText}>Settings</Text>
+            </TouchableOpacity>
+            <View style={styles.menuDivider} />
+            <TouchableOpacity style={styles.menuItem} onPress={handleDrafts}>
+              <Text style={[styles.menuItemText, draftsActive && styles.menuItemTextActive]}>
+                {draftsActive ? 'Drafts ✓' : 'Drafts'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={handleDeclined}>
+              <Text style={[styles.menuItemText, declinedActive && styles.menuItemTextActive]}>
+                {declinedActive ? 'Declined ✓' : 'Declined'}
+              </Text>
             </TouchableOpacity>
             <View style={styles.menuDivider} />
             <TouchableOpacity style={styles.menuItem} onPress={handleSignOut}>
@@ -121,5 +149,6 @@ const styles = StyleSheet.create({
   },
   menuItem: { paddingHorizontal: 16, paddingVertical: 12 },
   menuItemText: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
+  menuItemTextActive: { color: colors.primary },
   menuDivider: { height: 1, backgroundColor: colors.divider, marginHorizontal: 8 },
 });
