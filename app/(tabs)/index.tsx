@@ -107,8 +107,20 @@ export default function HomeScreen() {
     d.setHours(0, 0, 0, 0);
     return d;
   });
+  // react-native-calendars' <Calendar> only reads its `current` prop once,
+  // at mount, to seed its own internal month state - it does not react to
+  // that prop changing later (confirmed in node_modules/react-native-
+  // calendars/src/calendar/index.js: currentMonth is a useState initializer,
+  // no effect watches `current`). Swiping the calendar itself still works
+  // because that updates its internal state directly, but changeMonth
+  // (triggered from the Upcoming list's own swipe - see monthSwipe below)
+  // has no way to reach in and update it - remounting via `key` is the only
+  // way to force it to resync. Only bump this here, not in onMonthChange,
+  // so the calendar's own swipe/tap never remounts itself mid-gesture.
+  const [calendarSyncKey, setCalendarSyncKey] = useState(0);
   const changeMonth = (delta: number) => {
     setVisibleMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+    setCalendarSyncKey((k) => k + 1);
   };
   const [showDraftsOnly, setShowDraftsOnly] = useState(false);
   const [showDeclinedOnly, setShowDeclinedOnly] = useState(false);
@@ -1034,6 +1046,7 @@ export default function HomeScreen() {
       <View style={styles.contentArea} onLayout={handleContentLayout}>
         <View style={styles.calendarWrapper} onLayout={handleCalendarLayout}>
           <Calendar
+            key={calendarSyncKey}
             current={toDateKey(visibleMonth)}
             onDayPress={onDayPress}
             onMonthChange={(month) =>
